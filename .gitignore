@@ -5,3 +5,6 @@ opt
 *.spec
 *.ttf
 *.pdf
+dist
+build
+*.exe
