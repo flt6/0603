@@ -1,0 +1,10 @@
+imgs
+opt
+*.jpg
+*.png
+*.spec
+*.ttf
+*.pdf
+dist
+build
+*.exe
