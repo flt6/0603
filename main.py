@@ -9,16 +9,70 @@ import threading
 
 DATA_ANALYTICS = False
 CHANGE_TIME = 120
+IMG_DIR="imgs"
 begin = None
 last_win_size=[-1,-1]
 start_change = threading.Event()
 
 if DATA_ANALYTICS:
-    # import numpy as np
+    import numpy as np
     delay_arr = []
     chosen = np.ndarray((1000,), np.int16)
     chosen_i = 0
 
+def data_anal():
+    import matplotlib.pyplot as plt
+    import numpy as np
+    plt.close()
+
+     # 假设已有delay_arr数组
+
+     # 计算平均值和标准差
+    average_delay = np.mean(delay_arr)
+    std_delay = np.std(delay_arr)
+
+     # 定义筛选条件
+    threshold = 1.0  # 设置偏差阈值为1.0
+    filtered_delay_arr = [x for x in delay_arr if abs(x - average_delay) <= threshold * std_delay]
+
+    average_delay = np.mean(filtered_delay_arr)
+     # 创建x轴数据
+    x = np.arange(len(filtered_delay_arr))
+
+     # 绘制散点图
+    plt.scatter(x, filtered_delay_arr)
+
+     # 在图中标注平均值
+    plt.axhline(y=average_delay, color='r', linestyle='--', label='Average Delay')
+    plt.legend()
+
+     # 显示方差和标准差的数值
+    plt.text(0.05, 0.95, f"^2: {np.var(filtered_delay_arr):.2f}", transform=plt.gca().transAxes, ha='left', va='top')
+    plt.text(0.05, 0.9, f"sqrt: {np.std(filtered_delay_arr):.2f}", transform=plt.gca().transAxes, ha='left', va='top')
+    plt.text(0.05, 0.85, f"max_min: {np.max(filtered_delay_arr):.2f}_{np.min(filtered_delay_arr):.2f}", transform=plt.gca().transAxes, ha='left', va='top')
+
+    plt.show(block=True)
+
+    counts, bins, _=plt.hist(chosen[:chosen_i+1], bins=range(0,len(all_img)), align='left', rwidth=0.8)
+
+     # 设置图表标题和轴标签
+    plt.title("Frequency of Data")
+    plt.xlabel("Data")
+    plt.xticks(range(0,len(all_img)+3))
+    plt.ylabel("Frequency")
+
+     # 计算平均出现频次
+    average_frequency = np.mean(counts)
+    plt.axhline(y=average_frequency, color='r', linestyle='--', label='Average Frequency')
+
+     # 显示方差和标准差的数值
+    plt.text(0.05, 0.95, f"^2: {np.var(counts):.2f}", transform=plt.gca().transAxes, ha='left', va='top')
+    plt.text(0.05, 0.9, f"sqrt: {np.std(counts):.2f}", transform=plt.gca().transAxes, ha='left', va='top')
+    plt.text(0.05, 0.85, f"max_min: {np.max(counts):.2f}_{np.min(counts):.2f}", transform=plt.gca().transAxes, ha='left', va='top')
+
+
+     # 显示图表
+    plt.show(block=True)
 
 class FloatingWindow(tk.Toplevel):
     def __init__(self, master=None, **kwargs):
@@ -39,8 +93,8 @@ class FloatingWindow(tk.Toplevel):
         self.bind('<Button-1>', self.on_drag_start)  # 绑定鼠标左键按下事件
 
         # 添加激活按钮
-        btn_activate = tk.Button(self, text='激活', command=self.activate_main_window)
-        btn_activate.pack(fill=tk.BOTH, expand=True)
+        self.btn_activate = tk.Button(self, text='激活', command=self.activate_main_window)
+        self.btn_activate.pack(fill=tk.BOTH, expand=True)
 
     def on_drag_start(self, event):
         self._drag_data = {'x': event.x, 'y': event.y}
@@ -55,14 +109,23 @@ class FloatingWindow(tk.Toplevel):
     def activate_main_window(self):
         self.master.deiconify()
         self.master.lift()
-##        print("Call")
-##        start_change.set()
-##        choose_image()
-##        self.master.after(20,lambda :start_change.clear())
+
+class OnceFloatingWindow(FloatingWindow):
+    def __init__(self,master, **kwargs):
+        super().__init__(master, **kwargs)
+        self.btn_activate.config(text="选一个",bg="lightblue")
+        self.geometry("+200+100")
+
+    def activate_main_window(self):
+        self.master.deiconify()
+        self.master.lift()
+        choose_image(True)
+        
 
 def show_floating_window():
         floating_window = FloatingWindow(root)
-        floating_window.mainloop()
+        OnceFloatingWindow(root)
+        # floating_window.mainloop()
 
 def on_st_button_click(event=None):
     global delay_id
@@ -76,21 +139,26 @@ def on_end_button_click(event=None):
     delay_id = None
 
 img_i=0
-def choose_image():
+def choose_image(foreced=False):
     # print("Called choose_image")
     global img_i,dealed_imgs
-    if not start_change.is_set():
+    
+    if not (start_change.is_set() or foreced):
         return
-    r = img_i
+    bgn=time()
     img_i+=1
     if img_i>=len(dealed_imgs):
+        print("up",img_i,len(dealed_imgs))
         shuffle(dealed_imgs)
         img_i=0
     if DATA_ANALYTICS:
         global chosen, chosen_i
-        chosen[chosen_i] = r
+        chosen[chosen_i] = img_i
         chosen_i += 1
-    update_image(dealed_imgs[r], time())
+    update_image(dealed_imgs[img_i], time())
+    dur = (time() - bgn) * 1000
+    delay = CHANGE_TIME
+    delay_id = root.after(round(delay), choose_image)
 
 
 def update_image(img, bgn=None):
@@ -117,7 +185,7 @@ def update_image(img, bgn=None):
         delay = 10
         print("CHANGE_TIME is too short",CHANGE_TIME)
     # print(CHANGE_TIME,delay,dur)
-    delay_id = root.after(round(delay), choose_image)
+    
 
 
 def load_images():
@@ -139,6 +207,8 @@ def load_images():
     opt = []
     for img in opened_img:
         # 处理旋转
+        print("#",end="")
+        #root.update()
         exif = img._getexif()
         if exif:
             orientation = exif.get(0x0112)
@@ -162,7 +232,8 @@ def load_images():
         opt.append(resized_image)
     dealed_imgs = opt.copy()
     print("Done")
-    root.after_idle(lambda: show_image(dealed_imgs[0]))
+    shuffle(dealed_imgs)
+    show_image(dealed_imgs[0])
 
 
 def show_image(img):
@@ -231,7 +302,7 @@ right_frame = tk.Frame(root)
 right_frame.grid(row=0, column=1, sticky=tk.NSEW)
 
 # 加载图片
-all_img = listdir("imgs")
+all_img = listdir(IMG_DIR)
 
 # 创建一个Label用于显示图片
 photo_label = tk.Label(right_frame, text="Preparing")
@@ -251,67 +322,17 @@ root.bind('<Configure>', update_button_padding)
 # root.after_idle(lambda: show_image(dealed_imgs[0]))
 
 # 在后台线程加载图片
-thread = threading.Thread(target=load_images)
-thread.daemon = True
-thread.start()
+load_images()
+
 
 # float
 root.after_idle(show_floating_window)
 
+
 root.mainloop()
+
 
 if not DATA_ANALYTICS:
     exit()
-
-import matplotlib.pyplot as plt
-import numpy as np
-
- # 假设已有delay_arr数组
-
- # 计算平均值和标准差
-average_delay = np.mean(delay_arr)
-std_delay = np.std(delay_arr)
-
- # 定义筛选条件
-threshold = 1.0  # 设置偏差阈值为1.0
-filtered_delay_arr = [x for x in delay_arr if abs(x - average_delay) <= threshold * std_delay]
-
-average_delay = np.mean(filtered_delay_arr)
- # 创建x轴数据
-x = np.arange(len(filtered_delay_arr))
-
- # 绘制散点图
-plt.scatter(x, filtered_delay_arr)
-
- # 在图中标注平均值
-plt.axhline(y=average_delay, color='r', linestyle='--', label='Average Delay')
-plt.legend()
-
- # 显示方差和标准差的数值
-plt.text(0.05, 0.95, f"^2: {np.var(filtered_delay_arr):.2f}", transform=plt.gca().transAxes, ha='left', va='top')
-plt.text(0.05, 0.9, f"sqrt: {np.std(filtered_delay_arr):.2f}", transform=plt.gca().transAxes, ha='left', va='top')
-plt.text(0.05, 0.85, f"max_min: {np.max(filtered_delay_arr):.2f}_{np.min(filtered_delay_arr):.2f}", transform=plt.gca().transAxes, ha='left', va='top')
-
-plt.show()
-
-counts, bins, _=plt.hist(chosen[:chosen_i+1], bins=range(0,len(all_img)), align='left', rwidth=0.8)
-
- # 设置图表标题和轴标签
-plt.title("Frequency of Data")
-plt.xlabel("Data")
-plt.xticks(range(0,len(all_img)+3))
-plt.ylabel("Frequency")
-
- # 计算平均出现频次
-average_frequency = np.mean(counts)
-plt.axhline(y=average_frequency, color='r', linestyle='--', label='Average Frequency')
-
- # 显示方差和标准差的数值
-plt.text(0.05, 0.95, f"^2: {np.var(counts):.2f}", transform=plt.gca().transAxes, ha='left', va='top')
-plt.text(0.05, 0.9, f"sqrt: {np.std(counts):.2f}", transform=plt.gca().transAxes, ha='left', va='top')
-plt.text(0.05, 0.85, f"max_min: {np.max(counts):.2f}_{np.min(counts):.2f}", transform=plt.gca().transAxes, ha='left', va='top')
-
-
- # 显示图表
-plt.show()
-
+else:
+    data_anal()
