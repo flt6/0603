@@ -3,17 +3,16 @@ import tkinter as tk
 from tkinter import ttk
 from PIL import Image, ImageTk
 from os import listdir
-from random import randint,shuffle,seed
+from random import randint,shuffle
 from time import time
 import threading
 
 DATA_ANALYTICS = False
-CHANGE_TIME = 60
+CHANGE_TIME = 120
 IMG_DIR="imgs"
 begin = None
 last_win_size=[-1,-1]
 start_change = threading.Event()
-change_img_sig=threading.Lock()
 
 if DATA_ANALYTICS:
     import numpy as np
@@ -121,44 +120,32 @@ class OnceFloatingWindow(FloatingWindow):
         self.master.deiconify()
         self.master.lift()
         choose_image(True)
-        # on_end_button_click()
         
 
 def show_floating_window():
         floating_window = FloatingWindow(root)
         OnceFloatingWindow(root)
+        # floating_window.mainloop()
 
 def on_st_button_click(event=None):
     global delay_id
-    seed(time())
     delay_id = root.after(CHANGE_TIME, choose_image)
     start_change.set()
 
 
 def on_end_button_click(event=None):
-    print("Call",event)
-    global delay_id,img_i
-    if not start_change.is_set():return
+    global delay_id
     start_change.clear()
     delay_id = None
-    def push_back(img,img_i):
-        print("push",img,img_i)
-        dealed_imgs.append(img)
-        img_i-=1
-    root.after(1200000,push_back,dealed_imgs[img_i],img_i)
-    dealed_imgs.pop(img_i)
-    
 
 img_i=0
 def choose_image(foreced=False):
     # print("Called choose_image")
-    global img_i,dealed_imgs,dealed_imgs
+    global img_i,dealed_imgs
     
-    # change_img_sig.acquire()
     if not (start_change.is_set() or foreced):
         return
     bgn=time()
-    delay_id = root.after(round(CHANGE_TIME), choose_image)
     img_i+=1
     if img_i>=len(dealed_imgs):
         print("up",img_i,len(dealed_imgs))
@@ -170,9 +157,8 @@ def choose_image(foreced=False):
         chosen_i += 1
     update_image(dealed_imgs[img_i], time())
     dur = (time() - bgn) * 1000
-    delay = CHANGE_TIME-dur
-    # delay_id = root.after(round(delay), choose_image)
-    # change_img_sig.release()
+    delay = CHANGE_TIME
+    delay_id = root.after(round(delay), choose_image)
 
 
 def update_image(img, bgn=None):
@@ -203,7 +189,7 @@ def update_image(img, bgn=None):
 
 
 def load_images():
-    global dealed_imgs, last_win_size,dealed_imgs_bk,dealed_imgs
+    global dealed_imgs, last_win_size
 
     # 处理按钮字体
     style.configure("Custom.TButton", font=("宋体", button1.winfo_width()//10))
@@ -247,7 +233,6 @@ def load_images():
     dealed_imgs = opt.copy()
     print("Done")
     shuffle(dealed_imgs)
-    dealed_imgs_bk=dealed_imgs.copy()
     show_image(dealed_imgs[0])
 
 
@@ -304,12 +289,12 @@ left_frame.grid_columnconfigure(0, weight=1)
 style = ttk.Style()
 style.configure("Custom.TButton", font=("宋体", 12))
 
-button1 = ttk.Button(left_frame, text="Start", style="Custom.TButton")
+button1 = ttk.Button(left_frame, text="Start", command=on_st_button_click, style="Custom.TButton")
 button1.grid(row=0, column=0, padx=10, pady=10, sticky="nsew")
 
 
 # 创建按钮2
-button2 = ttk.Button(left_frame, text="End", style="Custom.TButton")
+button2 = ttk.Button(left_frame, text="End", command=on_end_button_click, style="Custom.TButton")
 button2.grid(row=1, column=0, padx=10, pady=10, sticky="nsew")
 
 # 创建右侧的Frame
@@ -337,12 +322,12 @@ root.bind('<Configure>', update_button_padding)
 # root.after_idle(lambda: show_image(dealed_imgs[0]))
 
 # 在后台线程加载图片
-thread = threading.Thread(target=load_images)
-thread.daemon = True
+load_images()
+
 
 # float
 root.after_idle(show_floating_window)
-root.after_idle(thread.start)
+
 
 root.mainloop()
 
