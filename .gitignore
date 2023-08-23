@@ -1,6 +1,7 @@
 imgs
 opt
 *.jpg
+*.jpeg
 *.png
 *.spec
 *.ttf
