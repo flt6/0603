@@ -3,7 +3,7 @@ import tkinter as tk
 from tkinter import ttk
 from PIL import Image, ImageTk
 from os import listdir
-from random import randint,shuffle,seed
+from random import shuffle,seed
 from time import time
 import threading
 
@@ -26,28 +26,20 @@ def data_anal():
     import numpy as np
     plt.close()
 
-     # 假设已有delay_arr数组
-
-     # 计算平均值和标准差
     average_delay = np.mean(delay_arr)
     std_delay = np.std(delay_arr)
 
-     # 定义筛选条件
-    threshold = 1.0  # 设置偏差阈值为1.0
+    threshold = 1.0
     filtered_delay_arr = [x for x in delay_arr if abs(x - average_delay) <= threshold * std_delay]
 
     average_delay = np.mean(filtered_delay_arr)
-     # 创建x轴数据
     x = np.arange(len(filtered_delay_arr))
 
-     # 绘制散点图
     plt.scatter(x, filtered_delay_arr)
 
-     # 在图中标注平均值
     plt.axhline(y=average_delay, color='r', linestyle='--', label='Average Delay')
     plt.legend()
 
-     # 显示方差和标准差的数值
     plt.text(0.05, 0.95, f"^2: {np.var(filtered_delay_arr):.2f}", transform=plt.gca().transAxes, ha='left', va='top')
     plt.text(0.05, 0.9, f"sqrt: {np.std(filtered_delay_arr):.2f}", transform=plt.gca().transAxes, ha='left', va='top')
     plt.text(0.05, 0.85, f"max_min: {np.max(filtered_delay_arr):.2f}_{np.min(filtered_delay_arr):.2f}", transform=plt.gca().transAxes, ha='left', va='top')
@@ -56,21 +48,17 @@ def data_anal():
 
     counts, bins, _=plt.hist(chosen[:chosen_i+1], bins=range(0,len(all_img)), align='left', rwidth=0.8)
 
-     # 设置图表标题和轴标签
     plt.title("Frequency of Data")
     plt.xlabel("Data")
     plt.xticks(range(0,len(all_img)+3))
     plt.ylabel("Frequency")
 
-     # 计算平均出现频次
     average_frequency = np.mean(counts)
     plt.axhline(y=average_frequency, color='r', linestyle='--', label='Average Frequency')
 
-     # 显示方差和标准差的数值
     plt.text(0.05, 0.95, f"^2: {np.var(counts):.2f}", transform=plt.gca().transAxes, ha='left', va='top')
     plt.text(0.05, 0.9, f"sqrt: {np.std(counts):.2f}", transform=plt.gca().transAxes, ha='left', va='top')
     plt.text(0.05, 0.85, f"max_min: {np.max(counts):.2f}_{np.min(counts):.2f}", transform=plt.gca().transAxes, ha='left', va='top')
-
 
      # 显示图表
     plt.show(block=True)
@@ -152,7 +140,7 @@ def on_end_button_click(event=None):
 img_i=0
 def choose_image(foreced=False):
     # print("Called choose_image")
-    global img_i,dealed_imgs,dealed_imgs
+    global img_i,dealed_imgs,dealed_imgs,delay_id
     
     # change_img_sig.acquire()
     if not (start_change.is_set() or foreced):
@@ -171,8 +159,6 @@ def choose_image(foreced=False):
     update_image(dealed_imgs[img_i], time())
     dur = (time() - bgn) * 1000
     delay = CHANGE_TIME-dur
-    # delay_id = root.after(round(delay), choose_image)
-    # change_img_sig.release()
 
 
 def update_image(img, bgn=None):
@@ -333,8 +319,6 @@ button2.bind("<Button-1>", on_end_button_click)
 
 # 绑定窗口大小变化事件
 root.bind('<Configure>', update_button_padding)
-
-# root.after_idle(lambda: show_image(dealed_imgs[0]))
 
 # 在后台线程加载图片
 thread = threading.Thread(target=load_images)
