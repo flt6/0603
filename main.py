@@ -248,7 +248,6 @@ class BackendApp:
         # p.join()
         
     def choose_image(self):
-        print(self.img_i,len(self.imgs))
         if self.img_i>=len(self.imgs):
             self.img_i=0
             shuffle(self.imgs)
