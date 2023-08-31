@@ -1,337 +1,278 @@
 import tkinter as tk
-import tkinter as tk
 from tkinter import ttk
+from tkinter import messagebox
 from PIL import Image, ImageTk
-from os import listdir
-from random import shuffle,seed
+from random import shuffle
+import pathlib
+from enum import Enum
 from time import time
-import threading
 
-DATA_ANALYTICS = False
-CHANGE_TIME = 60
-IMG_DIR="imgs"
-begin = None
-last_win_size=[-1,-1]
-start_change = threading.Event()
-change_img_sig=threading.Lock()
+CHANGE_TIME=80
+IMG_DIR=pathlib.Path("imgs")
+DBG=True
 
-if DATA_ANALYTICS:
-    import numpy as np
-    delay_arr = []
-    chosen = np.ndarray((1000,), np.int16)
-    chosen_i = 0
+class Event(Enum):
+    SHOW_IMG=1
+    NEXT_IMG=2
+    STOP=3
+    ADD_IMG=4
+    START=5
+    SAVE_DATA=6
 
-def data_anal():
-    import matplotlib.pyplot as plt
-    import numpy as np
-    plt.close()
+class Events:
+    def __init__(self):
+        self._front_ev = []
+        self._back_ev = []
+        self._global_ev=[]
+        if DBG:
+            import numpy as np
+            self.delay=np.zeros((10000,),np.float16)
+            self.delay_i=0
+            self.add_event(2,Event.SAVE_DATA,at=time()+5)
+    def add_event(self, recv:int ,event:Event, args:tuple=(), at=0):
+        '''
+        Add a new event
 
-    average_delay = np.mean(delay_arr)
-    std_delay = np.std(delay_arr)
-
-    threshold = 1.0
-    filtered_delay_arr = [x for x in delay_arr if abs(x - average_delay) <= threshold * std_delay]
-
-    average_delay = np.mean(filtered_delay_arr)
-    x = np.arange(len(filtered_delay_arr))
-
-    plt.scatter(x, filtered_delay_arr)
-
-    plt.axhline(y=average_delay, color='r', linestyle='--', label='Average Delay')
-    plt.legend()
-
-    plt.text(0.05, 0.95, f"^2: {np.var(filtered_delay_arr):.2f}", transform=plt.gca().transAxes, ha='left', va='top')
-    plt.text(0.05, 0.9, f"sqrt: {np.std(filtered_delay_arr):.2f}", transform=plt.gca().transAxes, ha='left', va='top')
-    plt.text(0.05, 0.85, f"max_min: {np.max(filtered_delay_arr):.2f}_{np.min(filtered_delay_arr):.2f}", transform=plt.gca().transAxes, ha='left', va='top')
-
-    plt.show(block=True)
-
-    counts, bins, _=plt.hist(chosen[:chosen_i+1], bins=range(0,len(all_img)), align='left', rwidth=0.8)
-
-    plt.title("Frequency of Data")
-    plt.xlabel("Data")
-    plt.xticks(range(0,len(all_img)+3))
-    plt.ylabel("Frequency")
-
-    average_frequency = np.mean(counts)
-    plt.axhline(y=average_frequency, color='r', linestyle='--', label='Average Frequency')
-
-    plt.text(0.05, 0.95, f"^2: {np.var(counts):.2f}", transform=plt.gca().transAxes, ha='left', va='top')
-    plt.text(0.05, 0.9, f"sqrt: {np.std(counts):.2f}", transform=plt.gca().transAxes, ha='left', va='top')
-    plt.text(0.05, 0.85, f"max_min: {np.max(counts):.2f}_{np.min(counts):.2f}", transform=plt.gca().transAxes, ha='left', va='top')
-
-     # 显示图表
-    plt.show(block=True)
-
-class FloatingWindow(tk.Toplevel):
-    def __init__(self, master=None, **kwargs):
-        super().__init__(master, **kwargs)
-        self.overrideredirect(True)  # 去掉窗口边框
-        self.attributes('-topmost', True)  # 窗口置顶
-
-        # 获取屏幕大小
-        screen_width = self.winfo_screenwidth()
-        screen_height = self.winfo_screenheight()
-
-        # 设置悬浮窗大小为屏幕高度的1/8
-        window_height = screen_height // 16
-    
-        self.geometry(f'{window_height}x{window_height}+100+100')
-
-        self.bind('<B1-Motion>', self.on_motion)  # 绑定鼠标左键移动事件
-        self.bind('<Button-1>', self.on_drag_start)  # 绑定鼠标左键按下事件
-
-        # 添加激活按钮
-        self.btn_activate = tk.Button(self, text='激活', command=self.activate_main_window)
-        self.btn_activate.pack(fill=tk.BOTH, expand=True)
-
-    def on_drag_start(self, event):
-        self._drag_data = {'x': event.x, 'y': event.y}
-
-    def on_motion(self, event):
-        delta_x = event.x - self._drag_data['x']
-        delta_y = event.y - self._drag_data['y']
-        new_x = self.winfo_x() + delta_x
-        new_y = self.winfo_y() + delta_y
-        self.geometry(f'+{new_x}+{new_y}')
-
-    def activate_main_window(self):
-        self.master.deiconify()
-        self.master.lift()
-
-class OnceFloatingWindow(FloatingWindow):
-    def __init__(self,master, **kwargs):
-        super().__init__(master, **kwargs)
-        self.btn_activate.config(text="选一个",bg="lightblue")
-        self.geometry("+200+100")
-
-    def activate_main_window(self):
-        self.master.deiconify()
-        self.master.lift()
-        choose_image(True)
-        # on_end_button_click()
-        
-
-def show_floating_window():
-        floating_window = FloatingWindow(root)
-        OnceFloatingWindow(root)
-
-def on_st_button_click(event=None):
-    global delay_id
-    seed(time())
-    delay_id = root.after(CHANGE_TIME, choose_image)
-    start_change.set()
-
-
-def on_end_button_click(event=None):
-    print("Call",event)
-    global delay_id,img_i
-    if not start_change.is_set():return
-    start_change.clear()
-    delay_id = None
-    def push_back(img,img_i):
-        print("push",img,img_i)
-        dealed_imgs.append(img)
-        img_i-=1
-    root.after(1200000,push_back,dealed_imgs[img_i],img_i)
-    dealed_imgs.pop(img_i)
-    
-
-img_i=0
-def choose_image(foreced=False):
-    # print("Called choose_image")
-    global img_i,dealed_imgs,dealed_imgs,delay_id
-    
-    # change_img_sig.acquire()
-    if not (start_change.is_set() or foreced):
-        return
-    bgn=time()
-    delay_id = root.after(round(CHANGE_TIME), choose_image)
-    img_i+=1
-    if img_i>=len(dealed_imgs):
-        print("up",img_i,len(dealed_imgs))
-        shuffle(dealed_imgs)
-        img_i=0
-    if DATA_ANALYTICS:
-        global chosen, chosen_i
-        chosen[chosen_i] = img_i
-        chosen_i += 1
-    update_image(dealed_imgs[img_i], time())
-    dur = (time() - bgn) * 1000
-    delay = CHANGE_TIME-dur
-
-
-def update_image(img, bgn=None):
-    global begin, photo_label, CHANGE_TIME, delay_id
-
-    # 更新图像
-    photo = ImageTk.PhotoImage(img)
-    photo_label.config(image=photo)
-    photo_label.image = photo
-    photo_label.pack(fill=tk.BOTH, expand=True)
-    if begin is None:
-        begin = time()
-    else:
-        if DATA_ANALYTICS:
-            # print(f"Duration: {(time() - begin) * 1000}")
-            delay_arr.append((time() - begin) * 1000)
-            begin = time()
-    if bgn is None:
-        return
-    dur = (time() - bgn) * 1000
-    delay = CHANGE_TIME - dur
-    if delay < 0:
-        CHANGE_TIME = round(dur + 10)
-        delay = 10
-        print("CHANGE_TIME is too short",CHANGE_TIME)
-    # print(CHANGE_TIME,delay,dur)
-    
-
-
-def load_images():
-    global dealed_imgs, last_win_size,dealed_imgs_bk,dealed_imgs
-
-    # 处理按钮字体
-    style.configure("Custom.TButton", font=("宋体", button1.winfo_width()//10))
-
-    # 获取窗口的当前大小
-    window_width = right_frame.winfo_width()
-    window_height = right_frame.winfo_height()
-
-    if window_height < 5:
-        return    
-
-    opened_img = []
-    for now in all_img:
-        opened_img.append(Image.open("imgs/" + now))
-    opt = []
-    for img in opened_img:
-        # 处理旋转
-        print("#",end="")
-        #root.update()
-        exif = img._getexif()
-        if exif:
-            orientation = exif.get(0x0112)
-            if orientation == 3:
-                img = img.rotate(180, expand=True)
-            elif orientation == 6:
-                img = img.rotate(-90, expand=True)
-            elif orientation == 8:
-                img = img.rotate(90, expand=True)
-
-        # 计算新的图像大小
-        src_width, src_height = img.size
-        if window_height < window_width * (src_height / src_width):
-            wid = window_height * (src_width / src_height)
-            hei = window_height
+        @arg recv:
+            0: Fronted event
+            1: Backend event
+            2: Global  event, will send at top.
+        '''
+        if recv==0:
+            self._front_ev.append((event, args, at))
+        elif recv==1:
+            self._back_ev.append((event, args, at))
+        elif recv == 2:
+            self._global_ev.append((event, args, at, 0))
         else:
-            wid = window_width
-            hei = window_width * (src_height / src_width)
+            raise ValueError("recv must be 0 or 1")
+    def get_events(self, typ:int):
+        sent=False
+        tem=[]
+        for eve,args,at,cnt in self._global_ev:
+            if time()>at:
+                if DBG and at!=0:
+                    self.delay[self.delay_i]=time()-at
+                if DBG and eve == Event.SAVE_DATA:
+                    import numpy as np
+                    np.save("data.npy",self.delay)
+                    self.add_event(2,Event.SAVE_DATA,at=time()+5)
+                    continue
+                sent=True
+                cnt+=1
+                if cnt<=2:tem.append((eve, args, at, cnt))
+                yield (eve,args)
+            else:
+                tem.append((eve, args, at, cnt))
+        self._global_ev=tem
+        
+        tem=[]
+        if typ==0:
+            for eve,args,at in self._front_ev:
+                if time()>at:
+                    if DBG and at!=0:
+                        self.delay[self.delay_i]=time()-at
+                    sent=True
+                    yield (eve,args)
+                else:
+                    tem.append((eve, args, at))
+            self._front_ev=tem
+        elif typ==1:
+            for eve,args,at in self._back_ev:
+                if time()>at:
+                    if DBG and at!=0:
+                        self.delay[self.delay_i]=time()-at
+                    sent=True
+                    yield (eve,args)
+                else:
+                    tem.append((eve, args, at))
+            self._back_ev=tem
+        else:
+            raise ValueError("typ must be 0 or 1")
+        if not sent:return []
 
-        resized_image = img.resize((round(wid), round(hei)))
-        opt.append(resized_image)
-    dealed_imgs = opt.copy()
-    print("Done")
-    shuffle(dealed_imgs)
-    dealed_imgs_bk=dealed_imgs.copy()
-    show_image(dealed_imgs[0])
+class BackendApp:
+    def __init__(self,events:Events):
+        self.imgs:list[Image.Image] = []
+        self.dealed_imgs_bk = []
+        self.img_i = 0
+        self._last_win_size=(-1,-1)
+        self.events=events
+        self.start=False
+    
+    def deal_events(self):
+        for typ,args in self.events.get_events(1):
+            if typ == Event.NEXT_IMG:
+                if self.start:
+                    self.choose_image()
+            elif typ == Event.STOP:
+                self.start=False
+                img = self.imgs.pop(self.img_i)
+                self.events.add_event(1,Event.ADD_IMG,args=(img,),at=time()+40*60)
+            elif typ == Event.ADD_IMG:
+                self.imgs.append(args[0])
+            elif typ==Event.START:
+                self.start=True
+
+    def load_images(self,right_frame):
+        # width and height must be get after window shadered.
+        win_wid = right_frame.winfo_width()
+        win_hei = right_frame.winfo_height()
+
+        # Check if the window size had a big change.
+        last_win_wid,last_win_hei = self._last_win_size
+        if abs(last_win_wid-win_wid)+abs(last_win_hei-win_hei)<10:
+            print("May not change size. Won't reload images")
+            return
+        else:
+            self._last_win_size = (win_wid,win_hei)
+
+        imgs:list[Image.Image]=[]
+        for img_file in IMG_DIR.iterdir():
+            imgs.append(Image.open(img_file))
+        # deal images
+        print("Loading images",end='')
+        for img in imgs:
+            print(".",end='',flush=True)
+            exif = img._getexif()
+            if exif:
+                orientation = exif.get(0x0112)
+                if orientation == 3:
+                    img = img.rotate(180, expand=True)
+                elif orientation == 6:
+                    img = img.rotate(-90, expand=True)
+                elif orientation == 8:
+                    img = img.rotate(90, expand=True)
+
+            # 计算新的图像大小
+            src_width, src_height = img.size
+            if win_wid < win_hei * (src_height / src_width):
+                wid = win_wid * (src_width / src_height)
+                hei = win_wid
+            else:
+                wid = win_hei
+                hei = win_hei * (src_height / src_width)
+
+            resized_image = img.resize((round(wid), round(hei)))
+            self.imgs.append(resized_image)
+        print()
+        shuffle(self.imgs)
+        self.events.add_event(0,Event.SHOW_IMG,(self.imgs[0],))
+        
+    def choose_image(self):
+        print(self.img_i,len(self.imgs))
+        if self.img_i>=len(self.imgs):
+            self.img_i=0
+            shuffle(self.imgs)
+            print("update")
+        self.events.add_event(0, Event.SHOW_IMG, args=(self.imgs[self.img_i],))
+        self.events.add_event(1, Event.NEXT_IMG, at=time()+CHANGE_TIME/1000)
+        self.img_i+=1
 
 
-def show_image(img):
-    # 更新图像
-    photo = ImageTk.PhotoImage(img)
-    photo_label.config(image=photo)
-    photo_label.image = photo
-    photo_label.pack(fill=tk.BOTH, expand=True)
+class FrontendApp:
+    def __init__(self, root:tk.Tk,backend:BackendApp,events:Events):
+        self.backend=backend
+        self.events=events
+        
+        self.root = root
+        self.root.geometry("1500x800")
+        self._init_styles()
+
+        self.left_frame = tk.Frame(root)
+        self.right_frame = tk.Frame(root)
+        self.root.grid_rowconfigure(0, weight=1)
+        self.root.grid_columnconfigure(0, weight=1, uniform="group1")
+        self.root.grid_columnconfigure(1, weight=3, uniform="group1")
+
+        self._init_buttons()
+        self.right_frame.grid(row=0, column=1, sticky=tk.NSEW)
+        self.img_label = tk.Label(self.right_frame, text="Preparing",font=("宋体",100))
+        self.img_label.pack(fill=tk.BOTH, expand=True)
+
+        self.root.bind('<Configure>', self.update_button_padding)
+
+        self.start_change=False
+        self.delay_id=None
 
 
-def update_button_padding(event=None):
-    global delay_id, last_win_size
-    # 获取窗口的当前大小
-    window_width = root.winfo_width()
-    window_height = root.winfo_height()
+    def _init_styles(self):
+        style = ttk.Style()
+        style.configure("Custom.TButton", font=("宋体", 12))
 
-    if last_win_size == [window_width, window_height]:
-        return
-    else:
-        print(last_win_size, (window_width, window_height))
-        last_win_size = [window_width, window_height]
+    def _init_buttons(self):
+        self.left_frame.grid(row=0, column=0, sticky=tk.NSEW)
+        self.left_frame.grid_rowconfigure(0, weight=1)
+        self.left_frame.grid_rowconfigure(1, weight=1)
+        self.left_frame.grid_columnconfigure(0, weight=1)
 
-    # 计算按钮的新的padx和pady值
-    padx = window_width // 40
-    pady = window_height // 10
+        self.button1 = ttk.Button(self.left_frame, text="Start", style="Custom.TButton")
+        self.button1.bind("<Button-1>", self.on_st_button_click)
+        self.button1.grid(row=0, column=0, padx=10, pady=10, sticky="nsew")
 
-    # 设置按钮的padx和pady值
-    button1.grid(row=0, column=0, padx=padx, pady=pady, sticky="nsew")
-    button2.grid(row=1, column=0, padx=padx, pady=pady, sticky="nsew")
+        self.button2 = ttk.Button(self.left_frame, text="End", style="Custom.TButton",)
+        self.button2.bind("<Button-1>", self.on_end_button_click)
+        self.button2.grid(row=1, column=0, padx=10, pady=10, sticky="nsew")
 
-    # 处理图片
-    if delay_id is not None:
-        root.after_cancel(delay_id)
-    delay_id = root.after(200, load_images)
+    def deal_events(self):
+        for typ,args in self.events.get_events(0):
+            if typ == Event.SHOW_IMG:
+                self.show_image(*args)
+            elif typ == Event.STOP:
+                self.start_change=False
+    
+    def on_st_button_click(self, event):
+        if self.start_change:
+            messagebox.showwarning("循环已启动","循环已启动，请勿反复点击此按钮。")
+            return
+        self.backend.choose_image()
+        self.events.add_event(1,Event.START)
+        self.start_change=True
 
+    def on_end_button_click(self, event):
+        if not self.start_change:
+            return
+        self.start_change=False
+        print("END EVENT")
+        self.events.add_event(2,Event.STOP)
 
-root = tk.Tk()
-root.option_add("*TButton.Style", "TButton")  # 添加样式
+    def show_image(self, img:Image.Image):
+        tkimg=ImageTk.PhotoImage(img)
+        self.img_label.config(image=tkimg)
+        self.img_label.photo=tkimg
+        self.img_label.pack(fill=tk.BOTH, expand=True)
 
-delay_id = None
+    def update_button_padding(self, event):
+        window_width = self.root.winfo_width()
+        window_height = self.root.winfo_height()
 
-# 设置窗口大小和位置
-root.geometry("1500x800")
+        padx = window_width // 40
+        pady = window_height // 10
 
-# 创建左侧的Frame
-left_frame = tk.Frame(root)
-left_frame.grid(row=0, column=0, sticky=tk.NSEW)
-left_frame.grid_rowconfigure(0, weight=1)
-left_frame.grid_rowconfigure(1, weight=1)
-left_frame.grid_columnconfigure(0, weight=1)
+        self.button1.grid(row=0, column=0, padx=padx, pady=pady, sticky="nsew")
+        self.button2.grid(row=1, column=0, padx=padx, pady=pady, sticky="nsew")
 
-# 创建按钮1
-style = ttk.Style()
-style.configure("Custom.TButton", font=("宋体", 12))
-
-button1 = ttk.Button(left_frame, text="Start", style="Custom.TButton")
-button1.grid(row=0, column=0, padx=10, pady=10, sticky="nsew")
-
-
-# 创建按钮2
-button2 = ttk.Button(left_frame, text="End", style="Custom.TButton")
-button2.grid(row=1, column=0, padx=10, pady=10, sticky="nsew")
-
-# 创建右侧的Frame
-right_frame = tk.Frame(root)
-right_frame.grid(row=0, column=1, sticky=tk.NSEW)
-
-# 加载图片
-all_img = listdir(IMG_DIR)
-
-# 创建一个Label用于显示图片
-photo_label = tk.Label(right_frame, text="Preparing")
-
-# 设置网格布局的列权重和uniform参数，使左右Frame严格平分界面宽度
-root.grid_rowconfigure(0, weight=1)
-root.grid_columnconfigure(0, weight=1, uniform="group1")
-root.grid_columnconfigure(1, weight=3, uniform="group1")
-
-# 绑定按钮的事件
-button1.bind("<Button-1>", on_st_button_click)
-button2.bind("<Button-1>", on_end_button_click)
-
-# 绑定窗口大小变化事件
-root.bind('<Configure>', update_button_padding)
-
-# 在后台线程加载图片
-thread = threading.Thread(target=load_images)
-thread.daemon = True
-
-# float
-root.after_idle(show_floating_window)
-root.after_idle(thread.start)
-
-root.mainloop()
+        if self.start_change:
+            # Stop all exents and reset.
+            # After moving the window most objects will be changed.
+            self.img_label.config(image=None)
+            self.start_change = False
+            self.root.after_cancel(self.delay_id)
+            self.delay_id=None
+            self.events.add_event(2,Event.STOP)
+        if self.delay_id is not None:
+            # If the window is still moving, do not load images.
+            self.root.after_cancel(self.delay_id)
+        # After the window stopped changing.
+        self.delay_id = self.root.after(200, self.backend.load_images,self.right_frame)
 
 
-if not DATA_ANALYTICS:
-    exit()
-else:
-    data_anal()
+if __name__ == "__main__":
+    root = tk.Tk()
+    eve=Events()
+    backend = BackendApp(eve)
+    frontend = FrontendApp(root,backend,eve)
+    while True:
+        root.update()
+        frontend.deal_events()
+        backend.deal_events()
