@@ -1,378 +1,216 @@
-import tkinter as tk
-from tkinter import ttk
-from tkinter import messagebox
-from PIL import Image, ImageTk
+from PySide6.QtWidgets import (QApplication, QWidget, QErrorMessage, 
+                               QMessageBox,QLabel,QGridLayout,
+                               QSizePolicy)
+from PySide6.QtGui import QPixmap,QImageReader
+from PySide6.QtCore import Qt,QTimer, QPoint
+import _mainUI
 from random import shuffle
-import pathlib
-from enum import Enum
+from pathlib import Path
 from time import time
-from threading import Thread
 
-CHANGE_TIME=70
-IMG_DIR=pathlib.Path("imgs")
-DBG=False
+IMG_DIR= Path("imgs")
+WAIT_TIME=60
 
-class Event(Enum):
-    SHOW_IMG=1
-    NEXT_IMG=2
-    STOP=3
-    ADD_IMG=4
-    START=5
-    SAVE_DATA=6
-    EXIT=7
-    SHOW_LOAD=8
-
-class Events:
-    def __init__(self):
-        self._front_ev = []
-        self._back_ev = []
-        self._global_ev=[]
-        if DBG:
-            import numpy as np
-            self.delay=np.zeros((10000,),np.double)
-            self.delay_i=0
-            self.add_event(2,Event.SAVE_DATA,at=time()+5)
-    def add_event(self, recv:int ,event:Event, args:tuple=(), at=0):
-        '''
-        Add a new event
-
-        @arg recv:
-            0: Fronted event
-            1: Backend event
-            2: Global  event, will send at top.
-        '''
-        if recv==0:
-            self._front_ev.append((event, args, at))
-        elif recv==1:
-            self._back_ev.append((event, args, at))
-        elif recv == 2:
-            self._global_ev.append((event, args, at, 0))
-        else:
-            raise ValueError("recv must be 0 or 1")
-    def get_events(self, typ:int):
-        sent=False
-        tem=[]
-        for eve,args,at,cnt in self._global_ev:
-            if time()>at:
-                if DBG and at!=0:
-                    self.delay[self.delay_i]=time()-at
-                    self.delay_i+=1
-                if DBG and (eve == Event.SAVE_DATA or eve == Event.EXIT):
-                    import numpy as np
-                    np.save("data.npy",self.delay)
-                    self.add_event(2,Event.SAVE_DATA,at=time()+5)
-                    if eve == Event.EXIT:
-                        exit()
-                    continue
-                if eve == Event.EXIT:
-                    exit()
-                sent=True
-                cnt+=1
-                if cnt<=2:tem.append((eve, args, at, cnt))
-                yield (eve,args)
-            else:
-                tem.append((eve, args, at, cnt))
-        self._global_ev=tem
-        
-        tem=[]
-        if typ==0:
-            for eve,args,at in self._front_ev:
-                if time()>at:
-                    if DBG and at!=0:
-                        self.delay[self.delay_i]=time()-at
-                        self.delay_i+=1
-                    sent=True
-                    yield (eve,args)
-                else:
-                    tem.append((eve, args, at))
-            self._front_ev=tem
-        elif typ==1:
-            for eve,args,at in self._back_ev:
-                if time()>at:
-                    if DBG and at!=0:
-                        self.delay[self.delay_i]=time()-at
-                        self.delay_i+=1
-                    sent=True
-                    yield (eve,args)
-                else:
-                    tem.append((eve, args, at))
-            self._back_ev=tem
-        else:
-            raise ValueError("typ must be 0 or 1")
-        if not sent:return []
-
-class FloatingWindow(tk.Toplevel):
-    def __init__(self,master) -> None:
-        super().__init__(master)
-        self.overrideredirect(True)  # 去掉窗口边框
-        self.attributes('-topmost', True)  # 窗口置顶
-        self.attributes('-transparentcolor', '#7f7f7f')
-        self.config(bg='#7f7f7f')
-        window_height = self.winfo_screenheight() // 14
-        self.geometry(f'{window_height}x{window_height}+100+100')
-
-        self.canvas = tk.Canvas(
-            self, 
-            width=window_height, 
-            height=window_height,
-            cursor="hand2",
-            bg="#7f7f7f",
-            bd=0,
-            highlightthickness=0
-        )
-        self.canvas.pack()
-        radius = window_height//7*3
-        centre = window_height//2
-        self.cir=self.canvas.create_oval(
-            centre - radius, 
-            centre - radius, 
-            centre + radius, 
-            centre + radius, 
-            fill='#0bc3ff',
-            outline="#7f7f7f"
-        )
-
-        self.label_activate = tk.Label(self.canvas, text='激活',background="#0bc3ff", )
-        button_posx=centre-self.label_activate.winfo_reqwidth()//2
-        button_posy=centre-self.label_activate.winfo_reqheight()//2
-        self.label_activate.place(x=button_posx, y=button_posy,)
-
-        # 窗体随着拖拽移动位置
-        self.bind('<B1-Motion>', self.on_motion)
-        self.bind('<Button-1>', self.on_drag_start)
-        self.bind('<ButtonRelease-1>',self.on_drag_end)
-
-    def onclick(self):
-        self.master.deiconify()
-        self.master.lift()
-        self.master.attributes('-topmost', True)
-        self.master.attributes('-topmost', False)
+class AutoChoose:
+    def __init__(self, Form:QWidget) -> None:
+        self.ui = _mainUI.Ui_Form()
+        self._form=Form
+        self.ui.setupUi(Form)
+        self.removed = {}
+        self._cur=None
+        self.img_gen = self._choose()
+        self.timer = QTimer(Form)
+        self.timer.timeout.connect(self.choose)
+        self.ui.start.pressed.connect(self.start)
+        self.ui.end.pressed.connect(self.stop)
+        self.ui.start_2.pressed.connect(self.start)
+        self.ui.end_2.pressed.connect(self.stop)
+        self.ui.reload.pressed.connect(self.setupImgs)
+        self.ui.reset.pressed.connect(self._reset)
+        self.ui.reset.released.connect(self._resetRelease)
+        self._form.resizeEvent = self._resized
+        self.resize_timmer = QTimer(Form)
+        self.resize_timmer.setSingleShot(True)
+        self.resize_timmer.timeout.connect(self.resizing_end)
+        self.setupImgs()
     
-    def on_drag_start(self, event):
-        self._drag_data = {'x': event.x, 'y': event.y}
-        self.is_drag=False
-        self.label_activate.config(bg='#0064a8')
-        self.canvas.itemconfig(self.cir,fill='#0064a8')
-    
-    def on_drag_end(self,_):
-        if not self.is_drag:
-            self.onclick()
-            self.label_activate.config(bg='#0bc3ff')
-            self.canvas.itemconfig(self.cir,fill='#0bc3ff')
-
-    def on_motion(self, event):
-        delta_x = event.x - self._drag_data['x']
-        delta_y = event.y - self._drag_data['y']
-        if abs(delta_x)+abs(delta_y) > 10:
-            self.is_drag = True
-            self.label_activate.config(bg='#0bc3ff')
-            self.canvas.itemconfig(self.cir,fill='#0bc3ff')
-        if self.is_drag:
-            new_x = self.winfo_x() + delta_x
-            new_y = self.winfo_y() + delta_y
-            self.geometry(f'+{new_x}+{new_y}')
-
-class BackendApp:
-    def __init__(self,events:Events):
-        self.imgs:list[Image.Image] = []
-        self.dealed_imgs_bk = []
-        self.img_i = 0
-        self._last_win_size=(-1,-1)
-        self.events=events
-        self.start=False
-    
-    def deal_events(self):
-        for typ,args in self.events.get_events(1):
-            if typ == Event.NEXT_IMG:
-                if self.start:
-                    self.choose_image()
-            elif typ == Event.STOP:
-                self.start=False
-                self.img_i-=1
-                img = self.imgs.pop(self.img_i)
-                self.events.add_event(1,Event.ADD_IMG,args=(img,),at=time()+40*60)
-            elif typ == Event.ADD_IMG:
-                self.imgs.append(args[0])
-            elif typ==Event.START:
-                self.start=True
-
-    def _load_images(self,win_wid,win_hei):
-        # Check if the window size had a big change.
-        last_win_wid,last_win_hei = self._last_win_size
-        if abs(last_win_wid-win_wid)+abs(last_win_hei-win_hei)<10:
-            print("May not change size. Won't reload images")
+    def _resized(self,event):
+        self.ui.img.clear()
+        self.ui.img.setText("Loading...")
+        self.timer.stop()
+        self.resize_timmer.start(500)
+    def resizing_end(self):
+        self.setupImgs()
+    def start(self):
+        if self.timer.isActive():
+            QMessageBox().warning(self._form, "Warning", "已经启动，请勿重复运行。")
             return
+        cnt=0
+        cur = time()
+        for val in self.removed.values():
+            if cur>=val:cnt+=1
+        print(f"Image list health condition: {cnt}/{len(self.removed)} ({cnt*100/len(self.removed)}%)")
+        if cnt==1:
+            QMessageBox.information(self._form, "Info", "图片数量仅剩1张，自动重置。")
+            self.reset()
+        elif cnt<=10:
+            btn_yes=QMessageBox.StandardButton.Yes
+            btn_no=QMessageBox.StandardButton.No
+            if QMessageBox.warning(self._form, "Warning", "图片数量少于10张，是否重置图片列表？",btn_yes,btn_no)==btn_yes:
+                self.reset()
+        self.timer.start(WAIT_TIME)
+    def stop(self):
+        if not self.timer.isActive():return
+        self.timer.stop()
+        if self._cur is None:
+            QMessageBox.about(self._form, "Question", "还没换图就点End了？")
+            return
+        self.removed[self._cur] = time() + 60*40
+        self.img_gen = self._choose()
+        self._cur = None
+    def _choose(self):
+        while True:
+            keys= list(self.imgs.keys())
+            shuffle(keys)
+            for key in keys:
+                if time() >= self.removed[key]:
+                    yield key,self.imgs[key]
+    def choose(self):
+        self._cur,img = next(self.img_gen)
+        if img is None:return
+        self.ui.img.setPixmap(img)
+    def _reset(self):
+        self._tmp = time()
+        print(self._tmp)
+    def _resetRelease(self):
+        print(time()-self._tmp)
+        if time()-self._tmp<1:self.reset()
         else:
-            self.events.add_event(0, Event.SHOW_LOAD)
-            self._last_win_size = (win_wid,win_hei)
+            print("Removed list: ")
+            cur = time()
+            for name,wait in self.removed.items():
+                if cur<wait:
+                    print("%-15s: %.2f (Left: %.2f)" % (name, wait,wait-cur))
+        self._tmp = None
 
-        imgs:list[Image.Image]=[]
-        for img_file in IMG_DIR.iterdir():
-            imgs.append(Image.open(img_file))
-        # deal images
-        print("Loading images",end='')
-        for img in imgs:
-            print(".",end='',flush=True)
-            exif = img._getexif()
-            if exif:
-                orientation = exif.get(0x0112)
-                if orientation == 3:
-                    img = img.rotate(180, expand=True)
-                elif orientation == 6:
-                    img = img.rotate(-90, expand=True)
-                elif orientation == 8:
-                    img = img.rotate(90, expand=True)
+    def reset(self):
+        for key in self.removed.keys():
+            self.removed[key]=0
+    def setupImgs(self):
+        self.timer.stop()
+        self.ui.img.clear()
+        self.imgs={}
+        self._size = self.ui.img.size()
+        for file in IMG_DIR.iterdir():
+            try:
+                img = QImageReader(str(file.resolve()))
+                img.setAutoTransform(True)
+                img = QPixmap.fromImageReader(img)
+                self.imgs[file.name]=img.scaled(self._size,Qt.AspectRatioMode.KeepAspectRatio)
+                self.removed[file.name]=0
+            except Exception as e:
+                err = QErrorMessage()
+                err.showMessage(f"Filed to import image {file}: {e}".replace("\n", "<br>"))
+                err.exec()
+        self.img_gen = self._choose()
+        self.choose()
 
-            # 计算新的图像大小
-            src_width, src_height = img.size
-            if win_wid < win_hei * (src_height / src_width):
-                wid = win_wid * (src_width / src_height)
-                hei = win_wid
-            else:
-                wid = win_hei
-                hei = win_hei * (src_height / src_width)
+class FloatingWindow(QWidget):
+    def __init__(self,win:QWidget):
+        super().__init__()
+        self.win=win
+        self._winCloseEvent = self.win.closeEvent
+        self.win.closeEvent=self._close
 
-            resized_image = img.resize((round(wid), round(hei)))
-            self.imgs.append(resized_image)
-        print()
-        shuffle(self.imgs)
-        self.events.add_event(0,Event.SHOW_IMG,(self.imgs[0],))
+        # 设置窗口属性
+        self.setWindowFlags(Qt.WindowType.FramelessWindowHint | Qt.WindowType.WindowStaysOnTopHint)
 
-    # 将load_images封装到子进程执行
-    def load_images(self,right_frame):
-        # width and height must be get after window shadered.
-        win_wid = right_frame.winfo_width()
-        win_hei = right_frame.winfo_height()
-        p = Thread(target=self._load_images, args=(win_wid,win_hei))
-        p.start()
-        # p.join()
+        # 设置窗口初始位置和大小
+        scr = QApplication.primaryScreen().size()
+        print("Screen size:",scr)
+        self.setGeometry(scr.width()*0.9, scr.height()*0.8, scr.width()*0.03, scr.width()*0.03)
+        self.setWindowOpacity(0.7)
+
         
-    def choose_image(self):
-        if self.img_i>=len(self.imgs):
-            self.img_i=0
-            shuffle(self.imgs)
-            print("update")
-        self.events.add_event(0, Event.SHOW_IMG, args=(self.imgs[self.img_i],))
-        self.events.add_event(1, Event.NEXT_IMG, at=time()+CHANGE_TIME/1000)
-        self.img_i+=1
+        self.label = QLabel(self)
+        self.label.setText("激活")
+        self.label.setAlignment(Qt.AlignCenter)
 
-
-class FrontendApp:
-    def __init__(self, root:tk.Tk,backend:BackendApp,events:Events):
-        self.backend=backend
-        self.events=events
+        sizePolicy = QSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Preferred)
+        sizePolicy.setHorizontalStretch(0)
+        sizePolicy.setVerticalStretch(0)
+        sizePolicy.setHeightForWidth(self.label.sizePolicy().hasHeightForWidth())
         
-        self.root = root
-        self.root.geometry("1500x800")
-        self._init_styles()
+        self.label.setSizePolicy(sizePolicy)
+        self.label.setStyleSheet(u"background-color: rgb(98, 255, 237);")
 
-        self.left_frame = tk.Frame(root)
-        self.right_frame = tk.Frame(root)
-        self.root.grid_rowconfigure(0, weight=1)
-        self.root.grid_columnconfigure(0, weight=1, uniform="group1")
-        self.root.grid_columnconfigure(1, weight=3, uniform="group1")
+        gridLayout = QGridLayout(self)
+        gridLayout.setContentsMargins(0, 0, 0, 0)
+        gridLayout.addWidget(self.label)
 
-        self._init_buttons()
-        self.right_frame.grid(row=0, column=1, sticky=tk.NSEW)
-        self.img_label = tk.Label(self.right_frame)
-        self.load_label = tk.Label(self.right_frame, text="Preparing",font=("宋体",100))
-        self.load_label.pack(fill=tk.BOTH, expand=True)
+        # 初始化鼠标偏移
+        self.drag_position = None
 
-        self.root.bind('<Configure>', self.update_button_padding)
-        self.root.protocol("WM_DELETE_WINDOW", self.on_exit)
-
-        self.start_change=False
-        self.delay_id=None
-
-    def on_exit(self):
-        self.root.destroy()
-        self.events.add_event(2,Event.EXIT)
-
-    def _init_styles(self):
-        style = ttk.Style()
-        style.configure("Custom.TButton", font=("宋体", 12))
-
-    def _init_buttons(self):
-        self.left_frame.grid(row=0, column=0, sticky=tk.NSEW)
-        self.left_frame.grid_rowconfigure(0, weight=1)
-        self.left_frame.grid_rowconfigure(1, weight=1)
-        self.left_frame.grid_columnconfigure(0, weight=1)
-
-        self.button1 = ttk.Button(self.left_frame, text="Start", style="Custom.TButton")
-        self.button1.bind("<Button-1>", self.on_st_button_click)
-        self.button1.grid(row=0, column=0, padx=10, pady=10, sticky="nsew")
-
-        self.button2 = ttk.Button(self.left_frame, text="End", style="Custom.TButton",)
-        self.button2.bind("<Button-1>", self.on_end_button_click)
-        self.button2.grid(row=1, column=0, padx=10, pady=10, sticky="nsew")
-
-    def deal_events(self):
-        for typ,args in self.events.get_events(0):
-            if typ == Event.SHOW_IMG:
-                self.show_image(*args)
-            elif typ == Event.STOP:
-                self.start_change=False
-            elif typ == Event.SHOW_LOAD:
-                self.show_load()
+    def _close(self,e):
+        self.close()
+        self._winCloseEvent(e)
     
-    def on_st_button_click(self, event):
-        if self.start_change:
-            messagebox.showwarning("循环已启动","循环已启动，请勿反复点击此按钮。")
-            return
-        self.backend.choose_image()
-        self.events.add_event(1,Event.START)
-        self.start_change=True
+    def mousePressEvent(self, event):
+        # 记录鼠标按下时的位置，用于拖动窗口
+        self.drag_position = event.globalPosition().toPoint()
+        self.init_pos = self.drag_position
 
-    def on_end_button_click(self, event):
-        if not self.start_change:
-            return
-        self.start_change=False
-        print("END EVENT")
-        self.events.add_event(2,Event.STOP)
+    def mouseMoveEvent(self, event):
+        # 计算鼠标移动的偏移量，并移动窗口
+        if self.drag_position:
+            cur = event.globalPosition().toPoint()
+            delta = cur - self.drag_position
+            if (cur-self.init_pos).manhattanLength()<10:return
+            self.move(self.pos() + delta)
+            self.drag_position = event.globalPosition().toPoint()
 
-    def show_image(self, img:Image.Image):
-        tkimg=ImageTk.PhotoImage(img)
-        self.img_label.config(image=tkimg)
-        self.img_label.photo=tkimg
-        self.load_label.pack_forget()
-        self.img_label.pack(fill=tk.BOTH, expand=True)
+    def mouseReleaseEvent(self, event):
+        # 清除鼠标偏移
+        delta:QPoint = event.globalPosition().toPoint() - self.init_pos
+        if delta.manhattanLength()<10:
+            self.onclik()
+        self.drag_position = None
+    def onclik(self):
+        self.win.showNormal()
+        self.win.raise_()
+        self.win.setWindowFlags(self.win.windowFlags()|Qt.WindowType.WindowStaysOnTopHint)
+        self.win.setWindowFlags(self.win.windowFlags()& ~Qt.WindowType.WindowStaysOnTopHint)
+        self.win.show()
 
-    def update_button_padding(self, event):
-        window_width = self.root.winfo_width()
-        window_height = self.root.winfo_height()
+class FloatWindowOnce(FloatingWindow):
+    def __init__(self, win: QWidget, main:AutoChoose):
+        super().__init__(win)
+        self._main=main
 
-        padx = window_width // 40
-        pady = window_height // 10
+        self.timer=QTimer(win)
+        self.timer.setSingleShot(True)
+        self.timer.timeout.connect(self._main.stop)
 
-        self.button1.grid(row=0, column=0, padx=padx, pady=pady, sticky="nsew")
-        self.button2.grid(row=1, column=0, padx=padx, pady=pady, sticky="nsew")
+        self.label.setText("选一个")
+        self.label.setStyleSheet(u"background-color: #58dc2a;")
 
-        if self.start_change:
-            # Stop all exents and reset.
-            # After moving the window most objects will be changed.
-            self.img_label.config(image=None)
-            self.start_change = False
-            self.root.after_cancel(self.delay_id)
-            self.delay_id=None
-            self.events.add_event(2,Event.STOP)
-        if self.delay_id is not None:
-            # If the window is still moving, do not load images.
-            self.root.after_cancel(self.delay_id)
-        # After the window stopped changing.
-        self.delay_id = self.root.after(200, self.backend.load_images,self.right_frame)
-    
-    def show_load(self):
-        self.img_label.pack_forget()
-        self.load_label.pack(fill=tk.BOTH, expand=True)
-        
+        scr = QApplication.primaryScreen().size()
+        print("Screen size:",scr)
+        self.setGeometry(scr.width()*0.1, scr.height()*0.8, scr.width()*0.03, scr.width()*0.03)
+
+    def onclik(self):
+        super().onclik()
+        self._main.start()
+        self.timer.start(300)
+
 
 if __name__ == "__main__":
-    root = tk.Tk()
-    eve=Events()
-    backend = BackendApp(eve)
-    frontend = FrontendApp(root,backend,eve)
-    float_window = FloatingWindow(root)
-    while True:
-        root.update()
-        frontend.deal_events()
-        backend.deal_events()
+    app = QApplication()
+    ui = QWidget()
+    main = AutoChoose(ui)
+    ui.show()
+    floatWin = FloatingWindow(ui)
+    floatWin.show()
+    once = FloatWindowOnce(ui,main)
+    once.show()
+    app.exec()
