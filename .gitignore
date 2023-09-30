@@ -1,10 +1,9 @@
 imgs
 opt
-*.jpg
-*.png
-*.spec
-*.ttf
-*.pdf
 dist
 build
+*.jpg
+*.png
 *.exe
+*.jpeg
+*.ttf

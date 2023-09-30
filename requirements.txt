@@ -1,1 +1,1 @@
-pillow
+PySide6

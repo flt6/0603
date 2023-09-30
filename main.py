@@ -1,317 +1,216 @@
-import tkinter as tk
-import tkinter as tk
-from tkinter import ttk
-from PIL import Image, ImageTk
-from os import listdir
-from random import randint,shuffle
+from PySide6.QtWidgets import (QApplication, QWidget, QErrorMessage, 
+                               QMessageBox,QLabel,QGridLayout,
+                               QSizePolicy)
+from PySide6.QtGui import QPixmap,QImageReader
+from PySide6.QtCore import Qt,QTimer, QPoint
+import _mainUI
+from random import shuffle
+from pathlib import Path
 from time import time
-import threading
 
-DATA_ANALYTICS = False
-CHANGE_TIME = 120
-begin = None
-last_win_size=[-1,-1]
-start_change = threading.Event()
+IMG_DIR= Path("imgs")
+WAIT_TIME=60
 
-if DATA_ANALYTICS:
-    # import numpy as np
-    delay_arr = []
-    chosen = np.ndarray((1000,), np.int16)
-    chosen_i = 0
-
-
-class FloatingWindow(tk.Toplevel):
-    def __init__(self, master=None, **kwargs):
-        super().__init__(master, **kwargs)
-        self.overrideredirect(True)  # 去掉窗口边框
-        self.attributes('-topmost', True)  # 窗口置顶
-
-        # 获取屏幕大小
-        screen_width = self.winfo_screenwidth()
-        screen_height = self.winfo_screenheight()
-
-        # 设置悬浮窗大小为屏幕高度的1/8
-        window_height = screen_height // 16
+class AutoChoose:
+    def __init__(self, Form:QWidget) -> None:
+        self.ui = _mainUI.Ui_Form()
+        self._form=Form
+        self.ui.setupUi(Form)
+        self.removed = {}
+        self._cur=None
+        self.img_gen = self._choose()
+        self.timer = QTimer(Form)
+        self.timer.timeout.connect(self.choose)
+        self.ui.start.pressed.connect(self.start)
+        self.ui.end.pressed.connect(self.stop)
+        self.ui.start_2.pressed.connect(self.start)
+        self.ui.end_2.pressed.connect(self.stop)
+        self.ui.reload.pressed.connect(self.setupImgs)
+        self.ui.reset.pressed.connect(self._reset)
+        self.ui.reset.released.connect(self._resetRelease)
+        self._form.resizeEvent = self._resized
+        self.resize_timmer = QTimer(Form)
+        self.resize_timmer.setSingleShot(True)
+        self.resize_timmer.timeout.connect(self.resizing_end)
+        self.setupImgs()
     
-        self.geometry(f'{window_height}x{window_height}+100+100')
-
-        self.bind('<B1-Motion>', self.on_motion)  # 绑定鼠标左键移动事件
-        self.bind('<Button-1>', self.on_drag_start)  # 绑定鼠标左键按下事件
-
-        # 添加激活按钮
-        btn_activate = tk.Button(self, text='激活', command=self.activate_main_window)
-        btn_activate.pack(fill=tk.BOTH, expand=True)
-
-    def on_drag_start(self, event):
-        self._drag_data = {'x': event.x, 'y': event.y}
-
-    def on_motion(self, event):
-        delta_x = event.x - self._drag_data['x']
-        delta_y = event.y - self._drag_data['y']
-        new_x = self.winfo_x() + delta_x
-        new_y = self.winfo_y() + delta_y
-        self.geometry(f'+{new_x}+{new_y}')
-
-    def activate_main_window(self):
-        self.master.deiconify()
-        self.master.lift()
-##        print("Call")
-##        start_change.set()
-##        choose_image()
-##        self.master.after(20,lambda :start_change.clear())
-
-def show_floating_window():
-        floating_window = FloatingWindow(root)
-        floating_window.mainloop()
-
-def on_st_button_click(event=None):
-    global delay_id
-    delay_id = root.after(CHANGE_TIME, choose_image)
-    start_change.set()
-
-
-def on_end_button_click(event=None):
-    global delay_id
-    start_change.clear()
-    delay_id = None
-
-img_i=0
-def choose_image():
-    # print("Called choose_image")
-    global img_i,dealed_imgs
-    if not start_change.is_set():
-        return
-    r = img_i
-    img_i+=1
-    if img_i>=len(dealed_imgs):
-        shuffle(dealed_imgs)
-        img_i=0
-    if DATA_ANALYTICS:
-        global chosen, chosen_i
-        chosen[chosen_i] = r
-        chosen_i += 1
-    update_image(dealed_imgs[r], time())
-
-
-def update_image(img, bgn=None):
-    global begin, photo_label, CHANGE_TIME, delay_id
-
-    # 更新图像
-    photo = ImageTk.PhotoImage(img)
-    photo_label.config(image=photo)
-    photo_label.image = photo
-    photo_label.pack(fill=tk.BOTH, expand=True)
-    if begin is None:
-        begin = time()
-    else:
-        if DATA_ANALYTICS:
-            # print(f"Duration: {(time() - begin) * 1000}")
-            delay_arr.append((time() - begin) * 1000)
-            begin = time()
-    if bgn is None:
-        return
-    dur = (time() - bgn) * 1000
-    delay = CHANGE_TIME - dur
-    if delay < 0:
-        CHANGE_TIME = round(dur + 10)
-        delay = 10
-        print("CHANGE_TIME is too short",CHANGE_TIME)
-    # print(CHANGE_TIME,delay,dur)
-    delay_id = root.after(round(delay), choose_image)
-
-
-def load_images():
-    global dealed_imgs, last_win_size
-
-    # 处理按钮字体
-    style.configure("Custom.TButton", font=("宋体", button1.winfo_width()//10))
-
-    # 获取窗口的当前大小
-    window_width = right_frame.winfo_width()
-    window_height = right_frame.winfo_height()
-
-    if window_height < 5:
-        return    
-
-    opened_img = []
-    for now in all_img:
-        opened_img.append(Image.open("imgs/" + now))
-    opt = []
-    for img in opened_img:
-        # 处理旋转
-        exif = img._getexif()
-        if exif:
-            orientation = exif.get(0x0112)
-            if orientation == 3:
-                img = img.rotate(180, expand=True)
-            elif orientation == 6:
-                img = img.rotate(-90, expand=True)
-            elif orientation == 8:
-                img = img.rotate(90, expand=True)
-
-        # 计算新的图像大小
-        src_width, src_height = img.size
-        if window_height < window_width * (src_height / src_width):
-            wid = window_height * (src_width / src_height)
-            hei = window_height
+    def _resized(self,event):
+        self.ui.img.clear()
+        self.ui.img.setText("Loading...")
+        self.timer.stop()
+        self.resize_timmer.start(500)
+    def resizing_end(self):
+        self.setupImgs()
+    def start(self):
+        if self.timer.isActive():
+            QMessageBox().warning(self._form, "Warning", "已经启动，请勿重复运行。")
+            return
+        cnt=0
+        cur = time()
+        for val in self.removed.values():
+            if cur>=val:cnt+=1
+        print(f"Image list health condition: {cnt}/{len(self.removed)} ({cnt*100/len(self.removed)}%)")
+        if cnt==1:
+            QMessageBox.information(self._form, "Info", "图片数量仅剩1张，自动重置。")
+            self.reset()
+        elif cnt<=10:
+            btn_yes=QMessageBox.StandardButton.Yes
+            btn_no=QMessageBox.StandardButton.No
+            if QMessageBox.warning(self._form, "Warning", "图片数量少于10张，是否重置图片列表？",btn_yes,btn_no)==btn_yes:
+                self.reset()
+        self.timer.start(WAIT_TIME)
+    def stop(self):
+        if not self.timer.isActive():return
+        self.timer.stop()
+        if self._cur is None:
+            QMessageBox.about(self._form, "Question", "还没换图就点End了？")
+            return
+        self.removed[self._cur] = time() + 60*40
+        self.img_gen = self._choose()
+        self._cur = None
+    def _choose(self):
+        while True:
+            keys= list(self.imgs.keys())
+            shuffle(keys)
+            for key in keys:
+                if time() >= self.removed[key]:
+                    yield key,self.imgs[key]
+    def choose(self):
+        self._cur,img = next(self.img_gen)
+        if img is None:return
+        self.ui.img.setPixmap(img)
+    def _reset(self):
+        self._tmp = time()
+        print(self._tmp)
+    def _resetRelease(self):
+        print(time()-self._tmp)
+        if time()-self._tmp<1:self.reset()
         else:
-            wid = window_width
-            hei = window_width * (src_height / src_width)
+            print("Removed list: ")
+            cur = time()
+            for name,wait in self.removed.items():
+                if cur<wait:
+                    print("%-15s: %.2f (Left: %.2f)" % (name, wait,wait-cur))
+        self._tmp = None
 
-        resized_image = img.resize((round(wid), round(hei)))
-        opt.append(resized_image)
-    dealed_imgs = opt.copy()
-    print("Done")
-    root.after_idle(lambda: show_image(dealed_imgs[0]))
+    def reset(self):
+        for key in self.removed.keys():
+            self.removed[key]=0
+    def setupImgs(self):
+        self.timer.stop()
+        self.ui.img.clear()
+        self.imgs={}
+        self._size = self.ui.img.size()
+        for file in IMG_DIR.iterdir():
+            try:
+                img = QImageReader(str(file.resolve()))
+                img.setAutoTransform(True)
+                img = QPixmap.fromImageReader(img)
+                self.imgs[file.name]=img.scaled(self._size,Qt.AspectRatioMode.KeepAspectRatio)
+                self.removed[file.name]=0
+            except Exception as e:
+                err = QErrorMessage()
+                err.showMessage(f"Filed to import image {file}: {e}".replace("\n", "<br>"))
+                err.exec()
+        self.img_gen = self._choose()
+        self.choose()
 
+class FloatingWindow(QWidget):
+    def __init__(self,win:QWidget):
+        super().__init__()
+        self.win=win
+        self._winCloseEvent = self.win.closeEvent
+        self.win.closeEvent=self._close
 
-def show_image(img):
-    # 更新图像
-    photo = ImageTk.PhotoImage(img)
-    photo_label.config(image=photo)
-    photo_label.image = photo
-    photo_label.pack(fill=tk.BOTH, expand=True)
+        # 设置窗口属性
+        self.setWindowFlags(Qt.WindowType.FramelessWindowHint | Qt.WindowType.WindowStaysOnTopHint)
 
+        # 设置窗口初始位置和大小
+        scr = QApplication.primaryScreen().size()
+        print("Screen size:",scr)
+        self.setGeometry(scr.width()*0.9, scr.height()*0.8, scr.width()*0.03, scr.width()*0.03)
+        self.setWindowOpacity(0.7)
 
-def update_button_padding(event=None):
-    global delay_id, last_win_size
-    # 获取窗口的当前大小
-    window_width = root.winfo_width()
-    window_height = root.winfo_height()
+        
+        self.label = QLabel(self)
+        self.label.setText("激活")
+        self.label.setAlignment(Qt.AlignCenter)
 
-    if last_win_size == [window_width, window_height]:
-        return
-    else:
-        print(last_win_size, (window_width, window_height))
-        last_win_size = [window_width, window_height]
+        sizePolicy = QSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Preferred)
+        sizePolicy.setHorizontalStretch(0)
+        sizePolicy.setVerticalStretch(0)
+        sizePolicy.setHeightForWidth(self.label.sizePolicy().hasHeightForWidth())
+        
+        self.label.setSizePolicy(sizePolicy)
+        self.label.setStyleSheet(u"background-color: rgb(98, 255, 237);")
 
-    # 计算按钮的新的padx和pady值
-    padx = window_width // 40
-    pady = window_height // 10
+        gridLayout = QGridLayout(self)
+        gridLayout.setContentsMargins(0, 0, 0, 0)
+        gridLayout.addWidget(self.label)
 
-    # 设置按钮的padx和pady值
-    button1.grid(row=0, column=0, padx=padx, pady=pady, sticky="nsew")
-    button2.grid(row=1, column=0, padx=padx, pady=pady, sticky="nsew")
+        # 初始化鼠标偏移
+        self.drag_position = None
 
-    # 处理图片
-    if delay_id is not None:
-        root.after_cancel(delay_id)
-    delay_id = root.after(200, load_images)
+    def _close(self,e):
+        self.close()
+        self._winCloseEvent(e)
+    
+    def mousePressEvent(self, event):
+        # 记录鼠标按下时的位置，用于拖动窗口
+        self.drag_position = event.globalPosition().toPoint()
+        self.init_pos = self.drag_position
 
+    def mouseMoveEvent(self, event):
+        # 计算鼠标移动的偏移量，并移动窗口
+        if self.drag_position:
+            cur = event.globalPosition().toPoint()
+            delta = cur - self.drag_position
+            if (cur-self.init_pos).manhattanLength()<10:return
+            self.move(self.pos() + delta)
+            self.drag_position = event.globalPosition().toPoint()
 
-root = tk.Tk()
-root.option_add("*TButton.Style", "TButton")  # 添加样式
+    def mouseReleaseEvent(self, event):
+        # 清除鼠标偏移
+        delta:QPoint = event.globalPosition().toPoint() - self.init_pos
+        if delta.manhattanLength()<10:
+            self.onclik()
+        self.drag_position = None
+    def onclik(self):
+        self.win.showNormal()
+        self.win.raise_()
+        self.win.setWindowFlags(self.win.windowFlags()|Qt.WindowType.WindowStaysOnTopHint)
+        self.win.setWindowFlags(self.win.windowFlags()& ~Qt.WindowType.WindowStaysOnTopHint)
+        self.win.show()
 
-delay_id = None
+class FloatWindowOnce(FloatingWindow):
+    def __init__(self, win: QWidget, main:AutoChoose):
+        super().__init__(win)
+        self._main=main
 
-# 设置窗口大小和位置
-root.geometry("1500x800")
+        self.timer=QTimer(win)
+        self.timer.setSingleShot(True)
+        self.timer.timeout.connect(self._main.stop)
 
-# 创建左侧的Frame
-left_frame = tk.Frame(root)
-left_frame.grid(row=0, column=0, sticky=tk.NSEW)
-left_frame.grid_rowconfigure(0, weight=1)
-left_frame.grid_rowconfigure(1, weight=1)
-left_frame.grid_columnconfigure(0, weight=1)
+        self.label.setText("选一个")
+        self.label.setStyleSheet(u"background-color: #58dc2a;")
 
-# 创建按钮1
-style = ttk.Style()
-style.configure("Custom.TButton", font=("宋体", 12))
+        scr = QApplication.primaryScreen().size()
+        print("Screen size:",scr)
+        self.setGeometry(scr.width()*0.1, scr.height()*0.8, scr.width()*0.03, scr.width()*0.03)
 
-button1 = ttk.Button(left_frame, text="Start", command=on_st_button_click, style="Custom.TButton")
-button1.grid(row=0, column=0, padx=10, pady=10, sticky="nsew")
-
-
-# 创建按钮2
-button2 = ttk.Button(left_frame, text="End", command=on_end_button_click, style="Custom.TButton")
-button2.grid(row=1, column=0, padx=10, pady=10, sticky="nsew")
-
-# 创建右侧的Frame
-right_frame = tk.Frame(root)
-right_frame.grid(row=0, column=1, sticky=tk.NSEW)
-
-# 加载图片
-all_img = listdir("imgs")
-
-# 创建一个Label用于显示图片
-photo_label = tk.Label(right_frame, text="Preparing")
-
-# 设置网格布局的列权重和uniform参数，使左右Frame严格平分界面宽度
-root.grid_rowconfigure(0, weight=1)
-root.grid_columnconfigure(0, weight=1, uniform="group1")
-root.grid_columnconfigure(1, weight=3, uniform="group1")
-
-# 绑定按钮的事件
-button1.bind("<Button-1>", on_st_button_click)
-button2.bind("<Button-1>", on_end_button_click)
-
-# 绑定窗口大小变化事件
-root.bind('<Configure>', update_button_padding)
-
-# root.after_idle(lambda: show_image(dealed_imgs[0]))
-
-# 在后台线程加载图片
-thread = threading.Thread(target=load_images)
-thread.daemon = True
-thread.start()
-
-# float
-root.after_idle(show_floating_window)
-
-root.mainloop()
-
-if not DATA_ANALYTICS:
-    exit()
-
-import matplotlib.pyplot as plt
-import numpy as np
-
- # 假设已有delay_arr数组
-
- # 计算平均值和标准差
-average_delay = np.mean(delay_arr)
-std_delay = np.std(delay_arr)
-
- # 定义筛选条件
-threshold = 1.0  # 设置偏差阈值为1.0
-filtered_delay_arr = [x for x in delay_arr if abs(x - average_delay) <= threshold * std_delay]
-
-average_delay = np.mean(filtered_delay_arr)
- # 创建x轴数据
-x = np.arange(len(filtered_delay_arr))
-
- # 绘制散点图
-plt.scatter(x, filtered_delay_arr)
-
- # 在图中标注平均值
-plt.axhline(y=average_delay, color='r', linestyle='--', label='Average Delay')
-plt.legend()
-
- # 显示方差和标准差的数值
-plt.text(0.05, 0.95, f"^2: {np.var(filtered_delay_arr):.2f}", transform=plt.gca().transAxes, ha='left', va='top')
-plt.text(0.05, 0.9, f"sqrt: {np.std(filtered_delay_arr):.2f}", transform=plt.gca().transAxes, ha='left', va='top')
-plt.text(0.05, 0.85, f"max_min: {np.max(filtered_delay_arr):.2f}_{np.min(filtered_delay_arr):.2f}", transform=plt.gca().transAxes, ha='left', va='top')
-
-plt.show()
-
-counts, bins, _=plt.hist(chosen[:chosen_i+1], bins=range(0,len(all_img)), align='left', rwidth=0.8)
-
- # 设置图表标题和轴标签
-plt.title("Frequency of Data")
-plt.xlabel("Data")
-plt.xticks(range(0,len(all_img)+3))
-plt.ylabel("Frequency")
-
- # 计算平均出现频次
-average_frequency = np.mean(counts)
-plt.axhline(y=average_frequency, color='r', linestyle='--', label='Average Frequency')
-
- # 显示方差和标准差的数值
-plt.text(0.05, 0.95, f"^2: {np.var(counts):.2f}", transform=plt.gca().transAxes, ha='left', va='top')
-plt.text(0.05, 0.9, f"sqrt: {np.std(counts):.2f}", transform=plt.gca().transAxes, ha='left', va='top')
-plt.text(0.05, 0.85, f"max_min: {np.max(counts):.2f}_{np.min(counts):.2f}", transform=plt.gca().transAxes, ha='left', va='top')
+    def onclik(self):
+        super().onclik()
+        self._main.start()
+        self.timer.start(300)
 
 
- # 显示图表
-plt.show()
-
+if __name__ == "__main__":
+    app = QApplication()
+    ui = QWidget()
+    main = AutoChoose(ui)
+    ui.show()
+    floatWin = FloatingWindow(ui)
+    floatWin.show()
+    once = FloatWindowOnce(ui,main)
+    once.show()
+    app.exec()
