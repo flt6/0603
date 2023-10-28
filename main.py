@@ -11,11 +11,14 @@ from PySide6.QtGui import QPixmap, QImageReader
 from PySide6.QtCore import Qt, QTimer, QPoint,QEvent,QObject
 import _mainUI
 from random import shuffle
+from json import dump,load,JSONDecodeError
+from traceback import format_exc
 from pathlib import Path
 from time import time
-import ctypes
+from threading import Thread
 
 IMG_DIR = Path("imgs")
+REMOVE_CFG=Path("removed.json")
 WAIT_TIME = 60
 
 
@@ -25,7 +28,18 @@ class AutoChoose(QObject):
         self.ui = _mainUI.Ui_Form()
         self._form = Form
         self.ui.setupUi(Form)
-        self.removed = {}
+        try:
+            with open(REMOVE_CFG,"r",encoding="utf-8") as f:
+                self.removed:dict[str,bool] = load(f)
+                # print(self.removed)
+                print("[+] Loaded config from "+str(REMOVE_CFG))
+        except FileNotFoundError:
+            print("[-] No removed config found.")
+        except JSONDecodeError as e:
+            QErrorMessage().showMessage(f"Cannot decode json: <br>"+format_exc(e).replace("\n","<br>"))
+        if not hasattr(self,"removed"):
+            print(1)
+            self.removed:dict[str,bool] = {}
         self._cur = None
         self.img_gen = self._choose()
         self.timer = QTimer(Form)
@@ -39,10 +53,22 @@ class AutoChoose(QObject):
         self.ui.reset.released.connect(self._resetRelease)
         self.ui.reset.installEventFilter(self)
         self._form.resizeEvent = self._resized
+
+        self._showEvent=self._form.showEvent
+        self._form.showEvent=self.showEv
+        self._firstStart=True
+
+        self.block_timmer = QTimer(Form)
+        self.block_timmer.setSingleShot(True)
+        self._block=True
+        def unblock():
+            self._block=False
+        self.block_timmer.timeout.connect(unblock)
+
         self.resize_timmer = QTimer(Form)
         self.resize_timmer.setSingleShot(True)
         self.resize_timmer.timeout.connect(self.resizing_end)
-        self.setupImgs()
+        self.before_resize=None
 
         scr = QApplication.primaryScreen().size()
         print("Screen size:", scr)
@@ -61,23 +87,32 @@ class AutoChoose(QObject):
                 self.ui.reset.setDown(False)
         return False
 
+    def showEv(self,event):
+        self._showEvent(event)
+        if self._firstStart:
+            self._firstStart=False
+            self.block_timmer.start(1000)
+            Thread(target=self.setupImgs).start()
+
     def _resized(self, event):
         self.ui.img.clear()
         self.ui.img.setText("Loading...")
+        if self.before_resize is None:
+            self.before_resize=self._form.geometry()
         self.timer.stop()
         self.resize_timmer.start(500)
 
     def resizing_end(self):
-        self.setupImgs()
+        if not self._block:
+            Thread(target=self.setupImgs).start()
 
     def start(self):
         if self.timer.isActive():
             QMessageBox().warning(self._form, "Warning", "已经启动，请勿重复运行。")
             return
         cnt = 0
-        cur = time()
-        for val in self.removed.values():
-            if cur >= val:
+        for ignore in self.removed.values():
+            if not ignore:
                 cnt += 1
         print(
             f"Image list health condition: {cnt}/{len(self.removed)} ({cnt*100/len(self.removed)}%)"
@@ -104,16 +139,17 @@ class AutoChoose(QObject):
         if self._cur is None:
             QMessageBox.about(self._form, "Question", "还没换图就点End了？")
             return
-        self.removed[self._cur] = time() + 60 * 40
-        self.img_gen = self._choose()
+        self.removed[self._cur] = True
         self._cur = None
+        with open(REMOVE_CFG,"w",encoding="utf-8") as f:
+            dump(self.removed,f)
 
     def _choose(self):
         while True:
             keys = list(self.imgs.keys())
             shuffle(keys)
             for key in keys:
-                if time() >= self.removed[key]:
+                if not self.removed[key]:
                     yield key, self.imgs[key]
 
     def choose(self):
@@ -132,21 +168,21 @@ class AutoChoose(QObject):
             self.reset()
         else:
             print("Removed list: ")
-            cur = time()
             for name, wait in self.removed.items():
-                if cur < wait:
-                    print("%-15s: %.2f (Left: %.2f)" % (name, wait, wait - cur))
+                if wait:
+                    print("%-15s" % name)
         self._tmp = None
 
     def reset(self):
         for key in self.removed.keys():
-            self.removed[key] = 0
+            self.removed[key] = False
 
     def setupImgs(self):
         self.timer.stop()
         self.ui.img.clear()
         self.imgs = {}
         self._size = self.ui.img.size()
+        print(1, self.ui.img.size())
         for file in IMG_DIR.iterdir():
             try:
                 img = QImageReader(str(file.resolve()))
@@ -155,7 +191,8 @@ class AutoChoose(QObject):
                 self.imgs[file.name] = img.scaled(
                     self._size, Qt.AspectRatioMode.KeepAspectRatio
                 )
-                self.removed[file.name] = 0
+                if file.name not in self.removed.keys():
+                    self.removed[file.name] = False
             except Exception as e:
                 err = QErrorMessage()
                 err.showMessage(
@@ -164,6 +201,7 @@ class AutoChoose(QObject):
                 err.exec()
         self.img_gen = self._choose()
         self.choose()
+        print(2,self.ui.img.size())
 
 
 class FloatingWindow(QWidget):
