@@ -3,7 +3,7 @@ opt
 dist
 build
 *.jpg
-*.png
+# *.png
 *.exe
 *.jpeg
 *.ttf

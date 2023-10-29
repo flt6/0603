@@ -21,33 +21,38 @@ IMG_DIR = Path("imgs")
 REMOVE_CFG=Path("removed.json")
 WAIT_TIME = 60
 
-
 class AutoChoose(QObject):
     def __init__(self, Form: QWidget) -> None:
         super().__init__()
         self.ui = _mainUI.Ui_Form()
         self._form = Form
         self.ui.setupUi(Form)
+
         try:
             with open(REMOVE_CFG,"r",encoding="utf-8") as f:
                 self.removed:dict[str,bool] = load(f)
-                # print(self.removed)
                 print("[+] Loaded config from "+str(REMOVE_CFG))
         except FileNotFoundError:
             print("[-] No removed config found.")
         except JSONDecodeError as e:
             QErrorMessage().showMessage(f"Cannot decode json: <br>"+format_exc(e).replace("\n","<br>"))
+    
         if not hasattr(self,"removed"):
             print(1)
             self.removed:dict[str,bool] = {}
+        
         self._cur = None
         self.img_gen = self._choose()
         self.timer = QTimer(Form)
         self.timer.timeout.connect(self.choose)
+
         self.ui.start.pressed.connect(self.start)
         self.ui.end.pressed.connect(self.stop)
         self.ui.start_2.pressed.connect(self.start)
         self.ui.end_2.pressed.connect(self.stop)
+
+        self._stopCount=0
+
         self.ui.reload.pressed.connect(self.setupImgs)
         self.ui.reset.pressed.connect(self._reset)
         self.ui.reset.released.connect(self._resetRelease)
@@ -94,6 +99,7 @@ class AutoChoose(QObject):
             self.block_timmer.start(1000)
             Thread(target=self.setupImgs).start()
 
+
     def _resized(self, event):
         self.ui.img.clear()
         self.ui.img.setText("Loading...")
@@ -133,6 +139,19 @@ class AutoChoose(QObject):
         self.timer.start(WAIT_TIME)
 
     def stop(self):
+        print(self._stopCount)
+        if time()-self._stopCount<0.5:
+            btn_yes = QMessageBox.StandardButton.Yes
+            btn_no = QMessageBox.StandardButton.No
+            if (
+                QMessageBox.question(
+                    self._form, "退出", "退出软件？", btn_yes, btn_no
+                )
+            == btn_yes
+            ):
+                exit(self._form.close())
+        else:
+            self._stopCount=time()
         if not self.timer.isActive():
             return
         self.timer.stop()
@@ -183,6 +202,9 @@ class AutoChoose(QObject):
         self.imgs = {}
         self._size = self.ui.img.size()
         print(1, self.ui.img.size())
+        if not IMG_DIR.is_dir():
+            QErrorMessage("Target dir <b>'{}'</b> not exists.".format(str(IMG_DIR))).exec()
+            exit()
         for file in IMG_DIR.iterdir():
             try:
                 img = QImageReader(str(file.resolve()))
@@ -210,6 +232,9 @@ class FloatingWindow(QWidget):
         self.win = win
         self._winCloseEvent = self.win.closeEvent
         self.win.closeEvent = self._close
+
+        self.setAttribute(Qt.WA_TranslucentBackground)
+        self.setStyleSheet("border-radius: 10px;")
 
         # 设置窗口属性
         self.setWindowFlags(
@@ -252,8 +277,8 @@ class FloatingWindow(QWidget):
         self.drag_position = None
 
     def _close(self, e):
-        self.close()
-        self._winCloseEvent(e)
+        if self._winCloseEvent(e):
+            self.close()
 
     def mousePressEvent(self, event):
         # 记录鼠标按下时的位置，用于拖动窗口
@@ -315,24 +340,19 @@ class FloatWindowOnce(FloatingWindow):
         self._main.start()
         self.timer.start(300)
 
-# class ChangeTime:
-#     def __init__(self, Form: QWidget, main:AutoChoose) -> None:
-#         self.ui = _mainUI.Ui_Form()
-#         self._form = Form
-#         self._main = main
-#         self.ui.setupUi(Form)
-#         self.
-
 if __name__ == "__main__":
     app = QApplication()
     ui = QWidget()
-    main = AutoChoose(ui)
+    try:
+        main = AutoChoose(ui)
+    except Exception:
+        QErrorMessage().showMessage("Failed to inititalize 'AutoChoose'<br>"+format_exc().replace("\n","<br>"))
     ui.show()
-    floatWin = FloatingWindow(ui)
-    floatWin.show()
-    once = FloatWindowOnce(ui, main)
-    once.show()
-    # chTime=ChangeTime(ui,main)
-    # chTimeUI=QWidget(ui)
-    # chTimeUI.show()
+    try:
+        floatWin = FloatingWindow(ui)
+        floatWin.show()
+        once = FloatWindowOnce(ui, main)
+        once.show()
+    except Exception:
+        QErrorMessage().showMessage("Failed to inititalize Floating Window<br>"+format_exc().replace("\n","<br>"))
     app.exec()
