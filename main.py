@@ -6,23 +6,32 @@ from PySide6.QtWidgets import (
     QLabel,
     QGridLayout,
     QSizePolicy,
+    QTableWidgetItem
 )
-from PySide6.QtGui import QPixmap, QImageReader
-from PySide6.QtCore import Qt, QTimer, QPoint,QEvent,QObject
-import _mainUI
+from PySide6.QtGui import QPixmap, QImageReader,QCloseEvent,QKeyEvent,QColor
+from PySide6.QtCore import Qt, QTimer, QPoint,QEvent,QObject,Signal,Slot
+import _mainUI,ui_changeTime
 from random import shuffle
 from json import dump,load,JSONDecodeError
 from traceback import format_exc
 from pathlib import Path
 from time import time
 from threading import Thread
+from sys import exit
 
 IMG_DIR = Path("imgs")
 REMOVE_CFG=Path("removed.json")
 WAIT_TIME = 60
 
+class Worker(QObject):
+    errorSignal = Signal(str,bool)
+    devSignal = Signal()
+
+    def run(self,e:str,_exit:bool=False):
+        self.errorSignal.emit(e.replace("\n","<br>"),_exit)
+
 class AutoChoose(QObject):
-    def __init__(self, Form: QWidget) -> None:
+    def __init__(self, Form: QWidget,worker:Worker) -> None:
         super().__init__()
         self.ui = _mainUI.Ui_Form()
         self._form = Form
@@ -51,12 +60,6 @@ class AutoChoose(QObject):
         self.ui.start_2.pressed.connect(self.start)
         self.ui.end_2.pressed.connect(self.stop)
 
-        self._stopCount=0
-
-        self.ui.reload.pressed.connect(self.setupImgs)
-        self.ui.reset.pressed.connect(self._reset)
-        self.ui.reset.released.connect(self._resetRelease)
-        self.ui.reset.installEventFilter(self)
         self._form.resizeEvent = self._resized
 
         self._showEvent=self._form.showEvent
@@ -70,10 +73,17 @@ class AutoChoose(QObject):
             self._block=False
         self.block_timmer.timeout.connect(unblock)
 
+        self.worker=worker
+        self.worker.errorSignal.connect(self.showErr)
+        self.foreceQuit=False
+
         self.resize_timmer = QTimer(Form)
         self.resize_timmer.setSingleShot(True)
         self.resize_timmer.timeout.connect(self.resizing_end)
         self.before_resize=None
+
+        self._form.keyPressEvent=self.keyPressEvent
+        self.keyLog="###"
 
         scr = QApplication.primaryScreen().size()
         print("Screen size:", scr)
@@ -84,13 +94,29 @@ class AutoChoose(QObject):
             scr.height() * 0.7,
         )
     
-    def eventFilter(self,obj,event):
-        if obj==self.ui.reset:
-            if event.type()==QEvent.Type.TouchBegin:
-                self.ui.reset.setDown(True)
-            elif event.type()==QEvent.Type.TouchEnd:
-                self.ui.reset.setDown(False)
-        return False
+    def closeEv(self,event:QCloseEvent):
+        if self.foreceQuit:
+            event.accept()
+            return
+        btn_yes = QMessageBox.StandardButton.Yes
+        btn_no = QMessageBox.StandardButton.No
+        if (
+            QMessageBox.question(
+                self._form, "退出", "退出软件？", btn_yes, btn_no
+            )
+        == btn_yes
+        ):
+            event.accept()
+        else:
+            event.ignore()
+    
+    def showErr(self,msg:str,_exit:bool):
+        err = QErrorMessage()
+        err.showMessage(msg)
+        err.exec()
+        if _exit:
+            self.foreceQuit=True
+            app.quit()
 
     def showEv(self,event):
         self._showEvent(event)
@@ -99,6 +125,13 @@ class AutoChoose(QObject):
             self.block_timmer.start(1000)
             Thread(target=self.setupImgs).start()
 
+    def keyPressEvent(self, event: QKeyEvent):
+        key = event.text()
+        self.keyLog+=key
+        self.keyLog=self.keyLog[1:]
+        if self.keyLog=="dev":
+            self.worker.devSignal.emit()
+        
 
     def _resized(self, event):
         self.ui.img.clear()
@@ -139,19 +172,6 @@ class AutoChoose(QObject):
         self.timer.start(WAIT_TIME)
 
     def stop(self):
-        print(self._stopCount)
-        if time()-self._stopCount<0.5:
-            btn_yes = QMessageBox.StandardButton.Yes
-            btn_no = QMessageBox.StandardButton.No
-            if (
-                QMessageBox.question(
-                    self._form, "退出", "退出软件？", btn_yes, btn_no
-                )
-            == btn_yes
-            ):
-                exit(self._form.close())
-        else:
-            self._stopCount=time()
         if not self.timer.isActive():
             return
         self.timer.stop()
@@ -177,21 +197,6 @@ class AutoChoose(QObject):
             return
         self.ui.img.setPixmap(img)
 
-    def _reset(self):
-        self._tmp = time()
-        print(self._tmp)
-
-    def _resetRelease(self):
-        print(time() - self._tmp)
-        if time() - self._tmp < 1:
-            self.reset()
-        else:
-            print("Removed list: ")
-            for name, wait in self.removed.items():
-                if wait:
-                    print("%-15s" % name)
-        self._tmp = None
-
     def reset(self):
         for key in self.removed.keys():
             self.removed[key] = False
@@ -203,8 +208,8 @@ class AutoChoose(QObject):
         self._size = self.ui.img.size()
         print(1, self.ui.img.size())
         if not IMG_DIR.is_dir():
-            QErrorMessage("Target dir <b>'{}'</b> not exists.".format(str(IMG_DIR))).exec()
-            exit()
+            self.worker.run("Target dir <b>'{}'</b> not exists.".format(str(IMG_DIR)),True)
+            return
         for file in IMG_DIR.iterdir():
             try:
                 img = QImageReader(str(file.resolve()))
@@ -216,14 +221,48 @@ class AutoChoose(QObject):
                 if file.name not in self.removed.keys():
                     self.removed[file.name] = False
             except Exception as e:
-                err = QErrorMessage()
-                err.showMessage(
-                    f"Filed to import image {file}: {e}".replace("\n", "<br>")
-                )
-                err.exec()
+                self.worker.run(f"Filed to import image {file}: {e}",False)
         self.img_gen = self._choose()
         self.choose()
         print(2,self.ui.img.size())
+
+
+class DevTool(QWidget):
+    def __init__(self, main:AutoChoose,worker:Worker) -> None:
+        super().__init__()
+        self.ui = ui_changeTime.Ui_Form()
+        self.ui.setupUi(self)
+        self.main=main
+        self.ui.refresh.clicked.connect(self.load)
+        self.ui.reset.clicked.connect(self.main.reset)
+        self.ui.change.clicked.connect(self.change)
+        self.worker=worker
+        self.worker.devSignal.connect(self._show)
+        self.load()
+
+    def _show(self):
+        self.show()
+        self.load()
+    
+    def load(self):
+        for row in range(self.ui.table.rowCount()):
+            self.ui.table.removeRow(row)
+        d=self.main.removed
+        for i,(key,val) in enumerate(d.items()):
+            self.ui.table.insertRow(i)
+            self.ui.table.setItem(i,0,QTableWidgetItem())
+            self.ui.table.setItem(i,1,QTableWidgetItem())
+            fileName=self.ui.table.item(i,0)
+            isRemoved=self.ui.table.item(i,1)
+            fileName.setText(key)
+            isRemoved.setText(str(val))
+            if val:
+                fileName.setBackground(QColor("lightblue"))
+                isRemoved.setBackground(QColor("lightblue"))
+
+
+    def change(self):
+        pass
 
 
 class FloatingWindow(QWidget):
@@ -276,8 +315,9 @@ class FloatingWindow(QWidget):
         # 初始化鼠标偏移
         self.drag_position = None
 
-    def _close(self, e):
-        if self._winCloseEvent(e):
+    def _close(self, e:QCloseEvent):
+        self._winCloseEvent(e)
+        if e.isAccepted():
             self.close()
 
     def mousePressEvent(self, event):
@@ -343,10 +383,15 @@ class FloatWindowOnce(FloatingWindow):
 if __name__ == "__main__":
     app = QApplication()
     ui = QWidget()
+    worker=Worker()
     try:
-        main = AutoChoose(ui)
+        main = AutoChoose(ui,worker)
+        ui.closeEvent=main.closeEv
+        
     except Exception:
-        QErrorMessage().showMessage("Failed to inititalize 'AutoChoose'<br>"+format_exc().replace("\n","<br>"))
+        err = QErrorMessage()
+        err.showMessage("Failed to inititalize 'AutoChoose'<br>"+format_exc().replace("\n","<br>"))
+        err.exec()
     ui.show()
     try:
         floatWin = FloatingWindow(ui)
@@ -355,4 +400,9 @@ if __name__ == "__main__":
         once.show()
     except Exception:
         QErrorMessage().showMessage("Failed to inititalize Floating Window<br>"+format_exc().replace("\n","<br>"))
+    
+
+    dev=DevTool(main,worker)
+    dev.show()
+
     app.exec()
