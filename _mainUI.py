@@ -1,9 +1,9 @@
 # -*- coding: utf-8 -*-
 
 ################################################################################
-## Form generated from reading UI file 'mainpywMkG.ui'
+## Form generated from reading UI file 'maincARAux.ui'
 ##
-## Created by: Qt User Interface Compiler version 6.4.3
+## Created by: Qt User Interface Compiler version 6.6.0
 ##
 ## WARNING! All changes made in this file will be lost when recompiling UI file!
 ################################################################################
@@ -16,8 +16,7 @@ from PySide6.QtGui import (QBrush, QColor, QConicalGradient, QCursor,
     QImage, QKeySequence, QLinearGradient, QPainter,
     QPalette, QPixmap, QRadialGradient, QTransform)
 from PySide6.QtWidgets import (QApplication, QHBoxLayout, QLabel, QPushButton,
-    QSizePolicy, QSpacerItem, QToolButton, QVBoxLayout,
-    QWidget)
+    QSizePolicy, QSpacerItem, QVBoxLayout, QWidget)
 
 class Ui_Form(object):
     def setupUi(self, Form):
@@ -69,16 +68,6 @@ class Ui_Form(object):
 
         self.verticalLayout.addWidget(self.end_2)
 
-        self.reload = QToolButton(Form)
-        self.reload.setObjectName(u"reload")
-        sizePolicy.setHeightForWidth(self.reload.sizePolicy().hasHeightForWidth())
-        self.reload.setSizePolicy(sizePolicy)
-        font2 = QFont()
-        font2.setPointSize(12)
-        self.reload.setFont(font2)
-
-        self.verticalLayout.addWidget(self.reload)
-
         self.verticalLayout.setStretch(0, 2)
         self.verticalLayout.setStretch(1, 1)
         self.verticalLayout.setStretch(2, 2)
@@ -120,14 +109,6 @@ class Ui_Form(object):
 
         self.verticalLayout_2.addWidget(self.end)
 
-        self.reset = QToolButton(Form)
-        self.reset.setObjectName(u"reset")
-        sizePolicy.setHeightForWidth(self.reset.sizePolicy().hasHeightForWidth())
-        self.reset.setSizePolicy(sizePolicy)
-        self.reset.setFont(font2)
-
-        self.verticalLayout_2.addWidget(self.reset)
-
         self.verticalLayout_2.setStretch(0, 2)
         self.verticalLayout_2.setStretch(1, 1)
         self.verticalLayout_2.setStretch(2, 2)
@@ -145,6 +126,18 @@ class Ui_Form(object):
 
         self.start_2.setDefault(False)
 
+        sty='''
+            QPushButton {
+                border-radius: 30px;
+                padding: 10px;
+                background-color: #dadada;
+                color: black;
+            }
+            QPushButton:hover {
+                background-color: #cdcdcd;
+            }
+        '''
+        Form.setStyleSheet(sty)
 
         QMetaObject.connectSlotsByName(Form)
     # setupUi
@@ -153,10 +146,8 @@ class Ui_Form(object):
         Form.setWindowTitle(QCoreApplication.translate("Form", u"Form", None))
         self.start_2.setText(QCoreApplication.translate("Form", u"Start", None))
         self.end_2.setText(QCoreApplication.translate("Form", u"End", None))
-        self.reload.setText(QCoreApplication.translate("Form", u"\u91cd\u65b0\u52a0\u8f7d\u56fe\u7247", None))
         self.img.setText(QCoreApplication.translate("Form", u"Loading...", None))
         self.start.setText(QCoreApplication.translate("Form", u"Start", None))
         self.end.setText(QCoreApplication.translate("Form", u"End", None))
-        self.reset.setText(QCoreApplication.translate("Form", u"\u91cd\u7f6e\u56fe\u7247\u5217\u8868", None))
     # retranslateUi
 
