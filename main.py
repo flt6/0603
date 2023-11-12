@@ -272,7 +272,7 @@ class FloatingWindow(QWidget):
         self._winCloseEvent = self.win.closeEvent
         self.win.closeEvent = self._close
 
-        self.setAttribute(Qt.WA_TranslucentBackground)
+        self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
         self.setStyleSheet("border-radius: 10px;")
 
         # 设置窗口属性
