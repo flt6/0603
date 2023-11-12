@@ -19,9 +19,13 @@ from pathlib import Path
 from time import time
 from threading import Thread
 from sys import exit
+from tts import TtsHelper
+from playsound import playsound
+from hashlib import md5
 
 IMG_DIR = Path("imgs")
 REMOVE_CFG=Path("removed.json")
+SOUND = Path("sounds")
 WAIT_TIME = 60
 
 class Worker(QObject):
@@ -85,6 +89,8 @@ class AutoChoose(QObject):
 
         self._form.keyPressEvent=self.keyPressEvent
         self.keyLog="###"
+
+        self.tts = TtsHelper()
 
         scr = QApplication.primaryScreen().size()
         print("Screen size:", scr)
@@ -172,6 +178,13 @@ class AutoChoose(QObject):
                 self.reset()
         self.timer.start(WAIT_TIME)
 
+    def play(self,filename:str):
+        file = Path(SOUND/(md5(filename.encode()).hexdigest()+".mp3"))
+        print(file,filename)
+        if not file.is_file():
+            self.tts.run(filename.split(".")[0],file)
+        playsound(file)
+
     def stop(self):
         if not self.timer.isActive():
             return
@@ -180,6 +193,7 @@ class AutoChoose(QObject):
             QMessageBox.about(self._form, "Question", "还没换图就点End了？")
             return
         self.removed[self._cur] = True
+        self.play(self._cur)
         self._cur = None
         with open(REMOVE_CFG,"w",encoding="utf-8") as f:
             dump(self.removed,f)
