@@ -1,9 +1,9 @@
 # -*- coding: utf-8 -*-
 
 ################################################################################
-## Form generated from reading UI file 'changeTimeyrlGFm.ui'
+## Form generated from reading UI file 'changeTime.ui'
 ##
-## Created by: Qt User Interface Compiler version 6.4.3
+## Created by: Qt User Interface Compiler version 6.5.2
 ##
 ## WARNING! All changes made in this file will be lost when recompiling UI file!
 ################################################################################
@@ -15,9 +15,9 @@ from PySide6.QtGui import (QBrush, QColor, QConicalGradient, QCursor,
     QFont, QFontDatabase, QGradient, QIcon,
     QImage, QKeySequence, QLinearGradient, QPainter,
     QPalette, QPixmap, QRadialGradient, QTransform)
-from PySide6.QtWidgets import (QApplication, QHBoxLayout, QHeaderView, QLabel,
-    QPushButton, QSizePolicy, QSpacerItem, QTableWidget,
-    QTableWidgetItem, QVBoxLayout, QWidget)
+from PySide6.QtWidgets import (QApplication, QFrame, QHBoxLayout, QHeaderView,
+    QLabel, QPushButton, QSizePolicy, QSpacerItem,
+    QTableWidget, QTableWidgetItem, QVBoxLayout, QWidget)
 
 class Ui_Form(object):
     def setupUi(self, Form):
@@ -35,6 +35,7 @@ class Ui_Form(object):
         self.table.setHorizontalHeaderItem(1, __qtablewidgetitem1)
         self.table.setObjectName(u"table")
         self.table.horizontalHeader().setDefaultSectionSize(65)
+        self.table.verticalHeader().setDefaultSectionSize(50)
 
         self.horizontalLayout_3.addWidget(self.table)
 
@@ -64,13 +65,50 @@ class Ui_Form(object):
 
         self.verticalLayout.addLayout(self.horizontalLayout)
 
+        self.line_2 = QFrame(Form)
+        self.line_2.setObjectName(u"line_2")
+        self.line_2.setFrameShape(QFrame.HLine)
+        self.line_2.setFrameShadow(QFrame.Sunken)
+
+        self.verticalLayout.addWidget(self.line_2)
+
         self.img = QLabel(Form)
         self.img.setObjectName(u"img")
 
         self.verticalLayout.addWidget(self.img)
 
+        self.fileName = QLabel(Form)
+        self.fileName.setObjectName(u"fileName")
+        font = QFont()
+        font.setPointSize(20)
+        self.fileName.setFont(font)
+
+        self.verticalLayout.addWidget(self.fileName)
+
+        self.line = QFrame(Form)
+        self.line.setObjectName(u"line")
+        self.line.setFrameShape(QFrame.HLine)
+        self.line.setFrameShadow(QFrame.Sunken)
+
+        self.verticalLayout.addWidget(self.line)
+
+        self.horizontalLayout_4 = QHBoxLayout()
+        self.horizontalLayout_4.setObjectName(u"horizontalLayout_4")
+        self.setT = QPushButton(Form)
+        self.setT.setObjectName(u"setT")
+
+        self.horizontalLayout_4.addWidget(self.setT)
+
+        self.setF = QPushButton(Form)
+        self.setF.setObjectName(u"setF")
+
+        self.horizontalLayout_4.addWidget(self.setF)
+
+
+        self.verticalLayout.addLayout(self.horizontalLayout_4)
+
         self.verticalLayout.setStretch(0, 1)
-        self.verticalLayout.setStretch(1, 5)
+        self.verticalLayout.setStretch(2, 5)
 
         self.horizontalLayout_3.addLayout(self.verticalLayout)
 
@@ -92,5 +130,8 @@ class Ui_Form(object):
         self.reset.setText(QCoreApplication.translate("Form", u"reset", None))
         self.change.setText(QCoreApplication.translate("Form", u"\u5207\u6362", None))
         self.img.setText(QCoreApplication.translate("Form", u"img", None))
+        self.fileName.setText(QCoreApplication.translate("Form", u"Filename", None))
+        self.setT.setText(QCoreApplication.translate("Form", u"\u8bbe\u7f6e\u4e3a\u662f", None))
+        self.setF.setText(QCoreApplication.translate("Form", u"\u8bbe\u7f6e\u4e3a\u5426", None))
     # retranslateUi
 

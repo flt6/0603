@@ -6,11 +6,12 @@ from PySide6.QtWidgets import (
     QLabel,
     QGridLayout,
     QSizePolicy,
-    QTableWidgetItem
+    QTableWidgetItem,
+    QTableWidget
 )
 from PySide6.QtGui import QPixmap, QImageReader,QCloseEvent,QKeyEvent,QColor
 from PySide6.QtCore import Qt, QTimer, QPoint,QEvent,QObject,Signal,Slot
-import _mainUI,ui_changeTime
+import _mainUI,changeTime_ui
 from random import shuffle
 from json import dump,load,JSONDecodeError
 from traceback import format_exc
@@ -230,23 +231,41 @@ class AutoChoose(QObject):
 class DevTool(QWidget):
     def __init__(self, main:AutoChoose,worker:Worker) -> None:
         super().__init__()
-        self.ui = ui_changeTime.Ui_Form()
+        self.ui = changeTime_ui.Ui_Form()
         self.ui.setupUi(self)
         self.main=main
         self.ui.refresh.clicked.connect(self.load)
         self.ui.reset.clicked.connect(self.main.reset)
         self.ui.change.clicked.connect(self.change)
+        self.ui.setT.clicked.connect(lambda :self._set(False))
+        self.ui.setF.clicked.connect(lambda :self._set(True))
+
+        self.ui.table.itemSelectionChanged.connect(self.onSelect)
+        self.ui.table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
+
         self.worker=worker
         self.worker.devSignal.connect(self._show)
+        self._size=self.ui.img.size()
         self.load()
 
+    def onSelect(self):
+        fileName = self.ui.table.item(self.ui.table.currentRow(),0).text()
+        img = self.main.imgs[fileName].scaled(
+            self._size, 
+            Qt.AspectRatioMode.KeepAspectRatio
+        )
+        self.ui.img.setPixmap(img)
+        self.ui.fileName.setText(fileName)
+
     def _show(self):
+        self.ui.img.clear()
+        self._size=self.ui.img.size()
         self.show()
         self.load()
     
     def load(self):
-        for row in range(self.ui.table.rowCount()):
-            self.ui.table.removeRow(row)
+        for _ in range(self.ui.table.rowCount()):
+            self.ui.table.removeRow(0)
         d=self.main.removed
         for i,(key,val) in enumerate(d.items()):
             self.ui.table.insertRow(i)
@@ -260,10 +279,28 @@ class DevTool(QWidget):
                 fileName.setBackground(QColor("lightblue"))
                 isRemoved.setBackground(QColor("lightblue"))
 
+    def _set(self,b:bool|None):
+        for idx in self.ui.table.selectedIndexes():
+            fileName = self.ui.table.item(idx.row(),0)
+            isRemoved=self.ui.table.item(idx.row(),1)
+
+            if b is None:
+                removed=self.main.removed[fileName.text()]
+            else:
+                removed = b
+            self.main.removed[fileName.text()] = not removed
+            
+            if not removed:
+                isRemoved.setText("True")
+                fileName.setBackground(QColor("lightblue"))
+                isRemoved.setBackground(QColor("lightblue"))
+            else:
+                isRemoved.setText("False")
+                fileName.setBackground(QColor("white"))
+                isRemoved.setBackground(QColor("white"))
 
     def change(self):
-        pass
-
+        self._set(None)
 
 class FloatingWindow(QWidget):
     def __init__(self, win: QWidget):
