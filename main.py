@@ -20,7 +20,7 @@ from time import time
 from threading import Thread
 from sys import exit
 from tts import TtsHelper
-from playsound import playsound
+from subprocess import Popen
 from hashlib import md5
 
 IMG_DIR = Path("imgs")
@@ -179,11 +179,12 @@ class AutoChoose(QObject):
         self.timer.start(WAIT_TIME)
 
     def play(self,filename:str):
+        # for filename in self.imgs.keys():
         file = Path(SOUND/(md5(filename.encode()).hexdigest()+".mp3"))
         print(file,filename)
         if not file.is_file():
             self.tts.run(filename.split(".")[0],file)
-        playsound(file)
+        Popen("ffplay.exe -loglevel error -hide_banner -nodisp -autoexit "+str(file.absolute()),stdout=None)
 
     def stop(self):
         if not self.timer.isActive():
@@ -338,7 +339,7 @@ class FloatingWindow(QWidget):
         scr = QApplication.primaryScreen().size()
         print("Screen size:", scr)
         self.setGeometry(
-            scr.width() * 0.9,
+            scr.width() * 0.1,
             scr.height() * 0.8,
             scr.width() * 0.03,
             scr.width() * 0.03,
@@ -420,11 +421,12 @@ class FloatWindowOnce(FloatingWindow):
         scr = QApplication.primaryScreen().size()
         print("Screen size:", scr)
         self.setGeometry(
-            scr.width() * 0.1,
+            scr.width() * 0.9,
             scr.height() * 0.8,
             scr.width() * 0.03,
             scr.width() * 0.03,
         )
+        
 
     def onclik(self):
         super().onclik()
