@@ -351,11 +351,13 @@ class DevTool(QWidget):
         self._set(None)
 
 class FloatingWindow(QWidget):
-    def __init__(self, win: QWidget):
+    def __init__(self, win: QWidget, main: AutoChoose, posTyp):
         super().__init__()
         self.win = win
         self._winCloseEvent = self.win.closeEvent
         self.win.closeEvent = self._close
+
+        self._main = main
 
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
         self.setStyleSheet("border-radius: 10px;")
@@ -367,22 +369,17 @@ class FloatingWindow(QWidget):
             Qt.WindowType.WindowStaysOnTopHint |
             Qt.WindowType.Tool
         )
-
-        # 设置窗口初始位置和大小
-        scr = QApplication.primaryScreen().size()
-        print("Screen size:", scr)
-        self.setGeometry(
-            scr.width() * 0.1,
-            scr.height() * 0.8,
-            scr.width() * 0.03,
-            scr.width() * 0.03,
-        )
         self.setWindowOpacity(0.7)
 
-        self.label = QLabel(self)
-        self.label.setText("激活")
-        self.label.setAlignment(Qt.AlignCenter)
+        # 初始化鼠标偏移
+        self.drag_position = None
+        
 
+        self.timer = QTimer(win)
+        self.timer.setSingleShot(True)
+        self.timer.timeout.connect(self._main.stop)
+
+        self.label = QLabel(self)
         sizePolicy = QSizePolicy(
             QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Preferred
         )
@@ -392,13 +389,44 @@ class FloatingWindow(QWidget):
 
         self.label.setSizePolicy(sizePolicy)
         self.label.setStyleSheet("background-color: rgb(98, 255, 237);")
+        self.label.setText("选一个")
+        self.label.setAlignment(Qt.AlignCenter)
 
         gridLayout = QGridLayout(self)
         gridLayout.setContentsMargins(0, 0, 0, 0)
         gridLayout.addWidget(self.label)
 
-        # 初始化鼠标偏移
-        self.drag_position = None
+        scr = QApplication.primaryScreen().size()
+        print("Screen size:", scr)
+        if posTyp == 1:
+            self.setGeometry(
+                scr.width() * 0.9,
+                scr.height() * 0.8,
+                scr.width() * 0.03,
+                scr.width() * 0.03,
+            )
+        else:
+            self.setGeometry(
+                scr.width() * 0.1,
+                scr.height() * 0.8,
+                scr.width() * 0.03,
+                scr.width() * 0.03,
+            )
+
+
+    def onclik(self):
+        self.win.showNormal()
+        self.win.raise_()
+        self.win.setWindowFlags(
+            self.win.windowFlags() | Qt.WindowType.WindowStaysOnTopHint
+        )
+        self.win.setWindowFlags(
+            self.win.windowFlags() & ~Qt.WindowType.WindowStaysOnTopHint
+        )
+        self.win.show()
+
+        self._main.start()
+        self.timer.start(300)
 
     def _close(self, e:QCloseEvent):
         self._winCloseEvent(e)
@@ -427,44 +455,11 @@ class FloatingWindow(QWidget):
             self.onclik()
         self.drag_position = None
 
-    def onclik(self):
-        self.win.showNormal()
-        self.win.raise_()
-        self.win.setWindowFlags(
-            self.win.windowFlags() | Qt.WindowType.WindowStaysOnTopHint
-        )
-        self.win.setWindowFlags(
-            self.win.windowFlags() & ~Qt.WindowType.WindowStaysOnTopHint
-        )
-        self.win.show()
 
-
-class FloatWindowOnce(FloatingWindow):
-    def __init__(self, win: QWidget, main: AutoChoose):
-        super().__init__(win)
-        self._main = main
-
-        self.timer = QTimer(win)
-        self.timer.setSingleShot(True)
-        self.timer.timeout.connect(self._main.stop)
-
-        self.label.setText("选一个")
-        self.label.setStyleSheet("background-color: #58dc2a;")
-
-        scr = QApplication.primaryScreen().size()
-        print("Screen size:", scr)
-        self.setGeometry(
-            scr.width() * 0.9,
-            scr.height() * 0.8,
-            scr.width() * 0.03,
-            scr.width() * 0.03,
-        )
+# class FloatWindowOnce(FloatingWindow):
+#     def __init__(self, win: QWidget, main: AutoChoose):
+#         super().__init__(win)
         
-
-    def onclik(self):
-        super().onclik()
-        self._main.start()
-        self.timer.start(300)
 
 if __name__ == "__main__":
     app = QApplication()
@@ -480,10 +475,10 @@ if __name__ == "__main__":
         err.exec()
     ui.show()
     try:
-        floatWin = FloatingWindow(ui)
-        floatWin.show()
-        once = FloatWindowOnce(ui, main)
-        once.show()
+        floatWinOne = FloatingWindow(ui,main,1)
+        floatWinOne.show()
+        floatWinTwo = FloatingWindow(ui,main,2)
+        floatWinTwo.show()
     except Exception:
         QErrorMessage().showMessage("Failed to inititalize Floating Window<br>"+format_exc().replace("\n","<br>"))
     
