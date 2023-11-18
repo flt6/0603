@@ -13,10 +13,9 @@ from PySide6.QtGui import QPixmap, QImageReader,QCloseEvent,QKeyEvent,QColor
 from PySide6.QtCore import Qt, QTimer, QPoint,QEvent,QObject,Signal,Slot
 import _mainUI,changeTime_ui
 from random import shuffle
-from json import dump,load,JSONDecodeError
+from pickle import dump,load,UnpicklingError
 from traceback import format_exc
 from pathlib import Path
-from time import time
 from threading import Thread
 from sys import exit
 from tts import TtsHelper
@@ -24,7 +23,7 @@ from subprocess import Popen
 from hashlib import md5
 
 IMG_DIR = Path("imgs")
-REMOVE_CFG=Path("removed.json")
+REMOVE_CFG=Path("removed.dmp")
 SOUND = Path("sounds")
 WAIT_TIME = 60
 
@@ -34,6 +33,35 @@ class Worker(QObject):
 
     def run(self,e:str,_exit:bool=False):
         self.errorSignal.emit(e.replace("\n","<br>"),_exit)
+class SavedDict(dict):
+    def __init__(self,path:Path|str, *args, **kwargs) -> None:
+        super().__init__(*args, **kwargs)
+        if isinstance(path,str):
+            path = Path(path)
+        if path.exists():
+            with open(path,"rb") as f:
+                super().update(load(f))
+        self._path = path
+    def _save(self):
+        with open(self._path,"wb") as f:
+            dump(dict(self),f)
+    def __setitem__(self, __key, __value) -> None:
+        super().__setitem__(__key, __value)
+        self._save()
+    def __delitem__(self, __key) -> None:
+        super().__delitem__(__key)
+        self._save()
+    def update(self, __m) -> None:
+        super().update(__m)
+        self._save()
+    def popitem(self, __key) -> tuple:
+        ret = super().popitem(__key)
+        self._save()
+        return ret
+    def pop(self, *arg, **argv):
+        ret = super().pop(*arg, **argv)
+        self._save()
+        return ret
 
 class AutoChoose(QObject):
     def __init__(self, Form: QWidget,worker:Worker) -> None:
@@ -43,16 +71,13 @@ class AutoChoose(QObject):
         self.ui.setupUi(Form)
 
         try:
-            with open(REMOVE_CFG,"r",encoding="utf-8") as f:
-                self.removed:dict[str,bool] = load(f)
-                print("[+] Loaded config from "+str(REMOVE_CFG))
+            self.removed=SavedDict(REMOVE_CFG)
         except FileNotFoundError:
             print("[-] No removed config found.")
-        except JSONDecodeError as e:
-            QErrorMessage().showMessage(f"Cannot decode json: <br>"+format_exc(e).replace("\n","<br>"))
+        except UnpicklingError as e:
+            QErrorMessage().showMessage(f"Cannot decode {REMOVE_CFG}: <br>"+format_exc(e).replace("\n","<br>"))
     
         if not hasattr(self,"removed"):
-            print(1)
             self.removed:dict[str,bool] = {}
         
         self._cur = None
@@ -100,7 +125,7 @@ class AutoChoose(QObject):
             scr.width() * 0.75,
             scr.height() * 0.7,
         )
-    
+
     def closeEv(self,event:QCloseEvent):
         if self.foreceQuit:
             event.accept()
@@ -196,8 +221,6 @@ class AutoChoose(QObject):
         self.removed[self._cur] = True
         self.play(self._cur)
         self._cur = None
-        with open(REMOVE_CFG,"w",encoding="utf-8") as f:
-            dump(self.removed,f)
 
     def _choose(self):
         while True:
@@ -238,6 +261,16 @@ class AutoChoose(QObject):
                     self.removed[file.name] = False
             except Exception as e:
                 self.worker.run(f"Filed to import image {file}: {e}",False)
+        remove = []
+        warntxt = []
+        for name in self.removed.keys():
+            if name not in self.imgs.keys():
+                remove.append(name)
+        for name in remove:
+            warntxt.append(f"File <b>'{name}'</b> found in <b>'{REMOVE_CFG}'</b> but not in <b>'{IMG_DIR}'</b>, autoremoved.")
+            self.removed.pop(name)
+        if warntxt:
+            self.worker.run("\n".join(warntxt))
         self.img_gen = self._choose()
         self.choose()
         print(2,self.ui.img.size())
@@ -273,9 +306,9 @@ class DevTool(QWidget):
         self.ui.fileName.setText(fileName)
 
     def _show(self):
+        self.show()
         self.ui.img.clear()
         self._size=self.ui.img.size()
-        self.show()
         self.load()
     
     def load(self):
@@ -456,6 +489,4 @@ if __name__ == "__main__":
     
 
     dev=DevTool(main,worker)
-    dev.show()
-
     app.exec()
