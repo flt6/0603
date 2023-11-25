@@ -6,7 +6,7 @@ import logging
 from requests import post
 from json import dumps
 from websockets.legacy import client
-from playsound import playsound
+from time import time
 
 log = logging.Logger("TTS")
 try:
@@ -44,15 +44,28 @@ def _getXTime():
     ]
     return "{}-{}-{}T{}:{}:{}.{}Z".format(*n)
 
-async def implete(SSML_text:str,opt_fmt:str,debug:bool,method:int=2) -> tuple[bool,str,bytes]:
+recentErrTime=None
+recentErrCnt=0
+
+async def implete(SSML_text:str,opt_fmt:str,debug:bool,method:int=1) -> tuple[bool,str,bytes]:
     '''
         Insider function.
 
         You should use `speech.SpeechSynthesizer` instead of this function
     '''
+    global recentErrCnt,recentErrTime
+
     log_handler.setLevel(logging.DEBUG if debug else logging.INFO)
     req_id = uuid.uuid4().hex.upper()
     log.debug("method=%d" % method)
+    if recentErrTime:
+        if recentErrCnt>3 and time()-recentErrTime<300:
+            log.info("Too many error for method 1, Use method 2 instead")
+            method=2
+        elif recentErrCnt>3 and time()-recentErrTime>300:
+            log.info("Reset recentErrTime and recentErrCnt")
+            recentErrTime=None
+            recentErrCnt=0
     if method == 1:
         url = "https://southeastasia.api.speech.microsoft.com/accfreetrial/texttospeech/acc/v3.0-beta1/vcg/speak"
         headers = {
@@ -80,6 +93,8 @@ async def implete(SSML_text:str,opt_fmt:str,debug:bool,method:int=2) -> tuple[bo
             else:
                 raise RuntimeError(data)
         except Exception as e:
+            recentErrCnt+=1
+            recentErrTime=time()
             log.error("An unexpected exception occurred. If this error kept going, please make an Issue on github with code 1")
             log.info("We will use the backup method.")
             log.debug("RE",exc_info=e)
