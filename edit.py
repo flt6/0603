@@ -1,17 +1,13 @@
-from PySide6.QtWidgets import QApplication, QWidget, QMessageBox, QTableWidgetItem
-from PySide6.QtGui import (
-    QImage,
-    QPainter,
-    QColor,
-    QFont,
-    QShortcut,
-    QKeySequence,
-    QClipboard,
-)
-from PySide6.QtCore import Qt, Signal, QObject
-import _editUI
 from pathlib import Path
 from threading import Thread
+
+from PySide6.QtCore import QObject, Qt, Signal
+from PySide6.QtGui import (QClipboard, QColor, QFont, QImage, QKeySequence,
+                           QPainter, QShortcut)
+from PySide6.QtWidgets import (QApplication, QMessageBox, QTableWidgetItem,
+                               QWidget)
+
+import _editUI
 
 WID = 1800
 HEI = 900
