@@ -3,9 +3,9 @@ opt
 dist
 build
 *.exe
-main.dist
-main.build
-main.onefile-build
 __pycache__
-removed.json
+removed.*
 sounds
+*.build
+*.dist
+*.onefile-build
