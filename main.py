@@ -6,42 +6,82 @@ from PySide6.QtWidgets import (
     QLabel,
     QGridLayout,
     QSizePolicy,
+    QTableWidgetItem,
+    QTableWidget
 )
-from PySide6.QtGui import QPixmap, QImageReader
-from PySide6.QtCore import Qt, QTimer, QPoint,QEvent,QObject
-import _mainUI
-from random import shuffle
-from json import dump,load,JSONDecodeError
+from PySide6.QtGui import QPixmap, QImageReader,QCloseEvent,QKeyEvent,QColor
+from PySide6.QtCore import Qt, QTimer, QPoint,QEvent,QObject,Signal,Slot
+import _mainUI,changeTime_ui
+from random import shuffle,choice,randint
+from pickle import dump,load,UnpicklingError
 from traceback import format_exc
 from pathlib import Path
-from time import time
 from threading import Thread
+from sys import exit
+from tts import TtsHelper
+from subprocess import Popen
+from hashlib import md5
 
 IMG_DIR = Path("imgs")
-REMOVE_CFG=Path("removed.json")
+REMOVE_CFG=Path("removed.dmp")
+SOUND = Path("sounds")
 WAIT_TIME = 60
 
+class Worker(QObject):
+    errorSignal = Signal(str,bool)
+    devSignal = Signal()
+
+    def run(self,e:str,_exit:bool=False):
+        self.errorSignal.emit(e.replace("\n","<br>"),_exit)
+class SavedDict(dict):
+    def __init__(self,path:Path|str, *args, **kwargs) -> None:
+        super().__init__(*args, **kwargs)
+        if isinstance(path,str):
+            path = Path(path)
+        if path.exists():
+            with open(path,"rb") as f:
+                super().update(load(f))
+        self._path = path
+    def _save(self):
+        with open(self._path,"wb") as f:
+            dump(dict(self),f)
+    def __setitem__(self, __key, __value) -> None:
+        super().__setitem__(__key, __value)
+        self._save()
+    def __delitem__(self, __key) -> None:
+        super().__delitem__(__key)
+        self._save()
+    def update(self, __m) -> None:
+        super().update(__m)
+        self._save()
+    def popitem(self, __key) -> tuple:
+        ret = super().popitem(__key)
+        self._save()
+        return ret
+    def pop(self, *arg, **argv):
+        ret = super().pop(*arg, **argv)
+        self._save()
+        return ret
+
 class AutoChoose(QObject):
-    def __init__(self, Form: QWidget) -> None:
+    def __init__(self, Form: QWidget,worker:Worker) -> None:
         super().__init__()
         self.ui = _mainUI.Ui_Form()
         self._form = Form
         self.ui.setupUi(Form)
 
         try:
-            with open(REMOVE_CFG,"r",encoding="utf-8") as f:
-                self.removed:dict[str,bool] = load(f)
-                print("[+] Loaded config from "+str(REMOVE_CFG))
+            self.removed=SavedDict(REMOVE_CFG)
         except FileNotFoundError:
             print("[-] No removed config found.")
-        except JSONDecodeError as e:
-            QErrorMessage().showMessage(f"Cannot decode json: <br>"+format_exc(e).replace("\n","<br>"))
+        except UnpicklingError as e:
+            QErrorMessage().showMessage(f"Cannot decode {REMOVE_CFG}: <br>"+format_exc(e).replace("\n","<br>"))
     
         if not hasattr(self,"removed"):
-            print(1)
             self.removed:dict[str,bool] = {}
         
         self._cur = None
+        self.forceShow=[]
         self.img_gen = self._choose()
         self.timer = QTimer(Form)
         self.timer.timeout.connect(self.choose)
@@ -51,12 +91,6 @@ class AutoChoose(QObject):
         self.ui.start_2.pressed.connect(self.start)
         self.ui.end_2.pressed.connect(self.stop)
 
-        self._stopCount=0
-
-        self.ui.reload.pressed.connect(self.setupImgs)
-        self.ui.reset.pressed.connect(self._reset)
-        self.ui.reset.released.connect(self._resetRelease)
-        self.ui.reset.installEventFilter(self)
         self._form.resizeEvent = self._resized
 
         self._showEvent=self._form.showEvent
@@ -70,10 +104,19 @@ class AutoChoose(QObject):
             self._block=False
         self.block_timmer.timeout.connect(unblock)
 
+        self.worker=worker
+        self.worker.errorSignal.connect(self.showErr)
+        self.foreceQuit=False
+
         self.resize_timmer = QTimer(Form)
         self.resize_timmer.setSingleShot(True)
         self.resize_timmer.timeout.connect(self.resizing_end)
         self.before_resize=None
+
+        self._form.keyPressEvent=self.keyPressEvent
+        self.keyLog="###"
+
+        self.tts = TtsHelper()
 
         scr = QApplication.primaryScreen().size()
         print("Screen size:", scr)
@@ -83,14 +126,30 @@ class AutoChoose(QObject):
             scr.width() * 0.75,
             scr.height() * 0.7,
         )
+
+    def closeEv(self,event:QCloseEvent):
+        if self.foreceQuit:
+            event.accept()
+            return
+        btn_yes = QMessageBox.StandardButton.Yes
+        btn_no = QMessageBox.StandardButton.No
+        if (
+            QMessageBox.question(
+                self._form, "退出", "退出软件？", btn_yes, btn_no
+            )
+        == btn_yes
+        ):
+            event.accept()
+        else:
+            event.ignore()
     
-    def eventFilter(self,obj,event):
-        if obj==self.ui.reset:
-            if event.type()==QEvent.Type.TouchBegin:
-                self.ui.reset.setDown(True)
-            elif event.type()==QEvent.Type.TouchEnd:
-                self.ui.reset.setDown(False)
-        return False
+    def showErr(self,msg:str,_exit:bool):
+        err = QErrorMessage()
+        err.showMessage(msg)
+        err.exec()
+        if _exit:
+            self.foreceQuit=True
+            app.quit()
 
     def showEv(self,event):
         self._showEvent(event)
@@ -99,6 +158,13 @@ class AutoChoose(QObject):
             self.block_timmer.start(1000)
             Thread(target=self.setupImgs).start()
 
+    def keyPressEvent(self, event: QKeyEvent):
+        key = event.text()
+        self.keyLog+=key
+        self.keyLog=self.keyLog[1:]
+        if self.keyLog=="dev":
+            self.worker.devSignal.emit()
+        
 
     def _resized(self, event):
         self.ui.img.clear()
@@ -116,52 +182,48 @@ class AutoChoose(QObject):
         if self.timer.isActive():
             QMessageBox().warning(self._form, "Warning", "已经启动，请勿重复运行。")
             return
-        cnt = 0
-        for ignore in self.removed.values():
+        notRemoved=[]
+        for name,ignore in self.removed.items():
             if not ignore:
-                cnt += 1
+                notRemoved.append(name)
+        cnt = len(notRemoved)
         print(
             f"Image list health condition: {cnt}/{len(self.removed)} ({cnt*100/len(self.removed)}%)"
         )
+        if cnt <= 10:
+            shuffle(notRemoved)
+            self.forceShow=notRemoved.copy()
+            self.reset()
         if cnt == 1:
             QMessageBox.information(self._form, "Info", "图片数量仅剩1张，自动重置。")
             self.reset()
-        elif cnt <= 10:
-            btn_yes = QMessageBox.StandardButton.Yes
-            btn_no = QMessageBox.StandardButton.No
-            if (
-                QMessageBox.warning(
-                    self._form, "Warning", "图片数量少于10张，是否重置图片列表？", btn_yes, btn_no
-                )
-                == btn_yes
-            ):
-                self.reset()
+        
         self.timer.start(WAIT_TIME)
 
+    def play(self,filename:str):
+        # for filename in self.imgs.keys():
+        file = Path(SOUND/(md5(filename.encode()).hexdigest()+".mp3"))
+        # print(file,filename)
+        if not file.is_file():
+            self.tts.run(filename.split(".")[0],file)
+        Popen("ffplay -loglevel error -hide_banner -nodisp -autoexit "+str(file.absolute()),stdout=None)
+
     def stop(self):
-        print(self._stopCount)
-        if time()-self._stopCount<0.5:
-            btn_yes = QMessageBox.StandardButton.Yes
-            btn_no = QMessageBox.StandardButton.No
-            if (
-                QMessageBox.question(
-                    self._form, "退出", "退出软件？", btn_yes, btn_no
-                )
-            == btn_yes
-            ):
-                exit(self._form.close())
-        else:
-            self._stopCount=time()
         if not self.timer.isActive():
             return
         self.timer.stop()
         if self._cur is None:
             QMessageBox.about(self._form, "Question", "还没换图就点End了？")
             return
+        if len(self.forceShow):
+            if len(self.forceShow)==1:self.reset()
+            self._cur=self.forceShow.pop()
+            self.ui.img.setPixmap(self.imgs[self._cur])
+            print("Enforeced",self._cur)
+            print(self.forceShow)
         self.removed[self._cur] = True
+        self.play(self._cur)
         self._cur = None
-        with open(REMOVE_CFG,"w",encoding="utf-8") as f:
-            dump(self.removed,f)
 
     def _choose(self):
         while True:
@@ -177,21 +239,6 @@ class AutoChoose(QObject):
             return
         self.ui.img.setPixmap(img)
 
-    def _reset(self):
-        self._tmp = time()
-        print(self._tmp)
-
-    def _resetRelease(self):
-        print(time() - self._tmp)
-        if time() - self._tmp < 1:
-            self.reset()
-        else:
-            print("Removed list: ")
-            for name, wait in self.removed.items():
-                if wait:
-                    print("%-15s" % name)
-        self._tmp = None
-
     def reset(self):
         for key in self.removed.keys():
             self.removed[key] = False
@@ -203,8 +250,8 @@ class AutoChoose(QObject):
         self._size = self.ui.img.size()
         print(1, self.ui.img.size())
         if not IMG_DIR.is_dir():
-            QErrorMessage("Target dir <b>'{}'</b> not exists.".format(str(IMG_DIR))).exec()
-            exit()
+            self.worker.run("Target dir <b>'{}'</b> not exists.".format(str(IMG_DIR)),True)
+            return
         for file in IMG_DIR.iterdir():
             try:
                 img = QImageReader(str(file.resolve()))
@@ -216,24 +263,106 @@ class AutoChoose(QObject):
                 if file.name not in self.removed.keys():
                     self.removed[file.name] = False
             except Exception as e:
-                err = QErrorMessage()
-                err.showMessage(
-                    f"Filed to import image {file}: {e}".replace("\n", "<br>")
-                )
-                err.exec()
+                self.worker.run(f"Filed to import image {file}: {e}",False)
+        remove = []
+        warntxt = []
+        for name in self.removed.keys():
+            if name not in self.imgs.keys():
+                remove.append(name)
+        for name in remove:
+            warntxt.append(f"File <b>'{name}'</b> found in <b>'{REMOVE_CFG}'</b> but not in <b>'{IMG_DIR}'</b>, autoremoved.")
+            self.removed.pop(name)
+        if warntxt:
+            self.worker.run("\n".join(warntxt))
         self.img_gen = self._choose()
         self.choose()
         print(2,self.ui.img.size())
 
 
+class DevTool(QWidget):
+    def __init__(self, main:AutoChoose,worker:Worker) -> None:
+        super().__init__()
+        self.ui = changeTime_ui.Ui_Form()
+        self.ui.setupUi(self)
+        self.main=main
+        self.ui.refresh.clicked.connect(self.load)
+        self.ui.reset.clicked.connect(self.main.reset)
+        self.ui.change.clicked.connect(self.change)
+        self.ui.setT.clicked.connect(lambda :self._set(False))
+        self.ui.setF.clicked.connect(lambda :self._set(True))
+
+        self.ui.table.itemSelectionChanged.connect(self.onSelect)
+        self.ui.table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
+
+        self.worker=worker
+        self.worker.devSignal.connect(self._show)
+        self._size=self.ui.img.size()
+        self.load()
+
+    def onSelect(self):
+        fileName = self.ui.table.item(self.ui.table.currentRow(),0).text()
+        img = self.main.imgs[fileName].scaled(
+            self._size, 
+            Qt.AspectRatioMode.KeepAspectRatio
+        )
+        self.ui.img.setPixmap(img)
+        self.ui.fileName.setText(fileName)
+
+    def _show(self):
+        self.show()
+        self.ui.img.clear()
+        self._size=self.ui.img.size()
+        self.load()
+    
+    def load(self):
+        for _ in range(self.ui.table.rowCount()):
+            self.ui.table.removeRow(0)
+        d=self.main.removed
+        for i,(key,val) in enumerate(d.items()):
+            self.ui.table.insertRow(i)
+            self.ui.table.setItem(i,0,QTableWidgetItem())
+            self.ui.table.setItem(i,1,QTableWidgetItem())
+            fileName=self.ui.table.item(i,0)
+            isRemoved=self.ui.table.item(i,1)
+            fileName.setText(key)
+            isRemoved.setText(str(val))
+            if val:
+                fileName.setBackground(QColor("lightblue"))
+                isRemoved.setBackground(QColor("lightblue"))
+
+    def _set(self,b:bool|None):
+        for idx in self.ui.table.selectedIndexes():
+            fileName = self.ui.table.item(idx.row(),0)
+            isRemoved=self.ui.table.item(idx.row(),1)
+
+            if b is None:
+                removed=self.main.removed[fileName.text()]
+            else:
+                removed = b
+            self.main.removed[fileName.text()] = not removed
+            
+            if not removed:
+                isRemoved.setText("True")
+                fileName.setBackground(QColor("lightblue"))
+                isRemoved.setBackground(QColor("lightblue"))
+            else:
+                isRemoved.setText("False")
+                fileName.setBackground(QColor("white"))
+                isRemoved.setBackground(QColor("white"))
+
+    def change(self):
+        self._set(None)
+
 class FloatingWindow(QWidget):
-    def __init__(self, win: QWidget):
+    def __init__(self, win: QWidget, main: AutoChoose, posTyp):
         super().__init__()
         self.win = win
         self._winCloseEvent = self.win.closeEvent
         self.win.closeEvent = self._close
 
-        self.setAttribute(Qt.WA_TranslucentBackground)
+        self._main = main
+
+        self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
         self.setStyleSheet("border-radius: 10px;")
 
         # 设置窗口属性
@@ -243,22 +372,17 @@ class FloatingWindow(QWidget):
             Qt.WindowType.WindowStaysOnTopHint |
             Qt.WindowType.Tool
         )
-
-        # 设置窗口初始位置和大小
-        scr = QApplication.primaryScreen().size()
-        print("Screen size:", scr)
-        self.setGeometry(
-            scr.width() * 0.9,
-            scr.height() * 0.8,
-            scr.width() * 0.03,
-            scr.width() * 0.03,
-        )
         self.setWindowOpacity(0.7)
 
-        self.label = QLabel(self)
-        self.label.setText("激活")
-        self.label.setAlignment(Qt.AlignCenter)
+        # 初始化鼠标偏移
+        self.drag_position = None
+        
 
+        self.timer = QTimer(win)
+        self.timer.setSingleShot(True)
+        self.timer.timeout.connect(self._main.stop)
+
+        self.label = QLabel(self)
         sizePolicy = QSizePolicy(
             QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Preferred
         )
@@ -268,16 +392,48 @@ class FloatingWindow(QWidget):
 
         self.label.setSizePolicy(sizePolicy)
         self.label.setStyleSheet("background-color: rgb(98, 255, 237);")
+        self.label.setText("选一个")
+        self.label.setAlignment(Qt.AlignCenter)
 
         gridLayout = QGridLayout(self)
         gridLayout.setContentsMargins(0, 0, 0, 0)
         gridLayout.addWidget(self.label)
 
-        # 初始化鼠标偏移
-        self.drag_position = None
+        scr = QApplication.primaryScreen().size()
+        print("Screen size:", scr)
+        if posTyp == 1:
+            self.setGeometry(
+                scr.width() * 0.9,
+                scr.height() * 0.8,
+                scr.width() * 0.03,
+                scr.width() * 0.03,
+            )
+        else:
+            self.setGeometry(
+                scr.width() * 0.1,
+                scr.height() * 0.8,
+                scr.width() * 0.03,
+                scr.width() * 0.03,
+            )
 
-    def _close(self, e):
-        if self._winCloseEvent(e):
+
+    def onclik(self):
+        self.win.showNormal()
+        self.win.raise_()
+        self.win.setWindowFlags(
+            self.win.windowFlags() | Qt.WindowType.WindowStaysOnTopHint
+        )
+        self.win.setWindowFlags(
+            self.win.windowFlags() & ~Qt.WindowType.WindowStaysOnTopHint
+        )
+        self.win.show()
+
+        self._main.start()
+        self.timer.start(randint(200,360))
+
+    def _close(self, e:QCloseEvent):
+        self._winCloseEvent(e)
+        if e.isAccepted():
             self.close()
 
     def mousePressEvent(self, event):
@@ -301,58 +457,29 @@ class FloatingWindow(QWidget):
         if delta.manhattanLength() < 10:
             self.onclik()
         self.drag_position = None
-
-    def onclik(self):
-        self.win.showNormal()
-        self.win.raise_()
-        self.win.setWindowFlags(
-            self.win.windowFlags() | Qt.WindowType.WindowStaysOnTopHint
-        )
-        self.win.setWindowFlags(
-            self.win.windowFlags() & ~Qt.WindowType.WindowStaysOnTopHint
-        )
-        self.win.show()
-
-
-class FloatWindowOnce(FloatingWindow):
-    def __init__(self, win: QWidget, main: AutoChoose):
-        super().__init__(win)
-        self._main = main
-
-        self.timer = QTimer(win)
-        self.timer.setSingleShot(True)
-        self.timer.timeout.connect(self._main.stop)
-
-        self.label.setText("选一个")
-        self.label.setStyleSheet("background-color: #58dc2a;")
-
-        scr = QApplication.primaryScreen().size()
-        print("Screen size:", scr)
-        self.setGeometry(
-            scr.width() * 0.1,
-            scr.height() * 0.8,
-            scr.width() * 0.03,
-            scr.width() * 0.03,
-        )
-
-    def onclik(self):
-        super().onclik()
-        self._main.start()
-        self.timer.start(300)
+        
 
 if __name__ == "__main__":
     app = QApplication()
     ui = QWidget()
+    worker=Worker()
     try:
-        main = AutoChoose(ui)
+        main = AutoChoose(ui,worker)
+        ui.closeEvent=main.closeEv
+        
     except Exception:
-        QErrorMessage().showMessage("Failed to inititalize 'AutoChoose'<br>"+format_exc().replace("\n","<br>"))
+        err = QErrorMessage()
+        err.showMessage("Failed to inititalize 'AutoChoose'<br>"+format_exc().replace("\n","<br>"))
+        err.exec()
     ui.show()
     try:
-        floatWin = FloatingWindow(ui)
-        floatWin.show()
-        once = FloatWindowOnce(ui, main)
-        once.show()
+        floatWinOne = FloatingWindow(ui,main,1)
+        floatWinOne.show()
+        floatWinTwo = FloatingWindow(ui,main,2)
+        floatWinTwo.show()
     except Exception:
         QErrorMessage().showMessage("Failed to inititalize Floating Window<br>"+format_exc().replace("\n","<br>"))
+    
+
+    dev=DevTool(main,worker)
     app.exec()

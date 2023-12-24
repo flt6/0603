@@ -2,8 +2,10 @@ imgs
 opt
 dist
 build
-*.jpg
-# *.png
 *.exe
-*.jpeg
-*.ttf
+__pycache__
+removed.*
+sounds
+*.build
+*.dist
+*.onefile-build
