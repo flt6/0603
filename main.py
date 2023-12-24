@@ -12,7 +12,7 @@ from PySide6.QtWidgets import (
 from PySide6.QtGui import QPixmap, QImageReader,QCloseEvent,QKeyEvent,QColor
 from PySide6.QtCore import Qt, QTimer, QPoint,QEvent,QObject,Signal,Slot
 import _mainUI,changeTime_ui
-from random import shuffle
+from random import shuffle,choice,randint
 from pickle import dump,load,UnpicklingError
 from traceback import format_exc
 from pathlib import Path
@@ -81,6 +81,7 @@ class AutoChoose(QObject):
             self.removed:dict[str,bool] = {}
         
         self._cur = None
+        self.forceShow=[]
         self.img_gen = self._choose()
         self.timer = QTimer(Form)
         self.timer.timeout.connect(self.choose)
@@ -181,35 +182,31 @@ class AutoChoose(QObject):
         if self.timer.isActive():
             QMessageBox().warning(self._form, "Warning", "已经启动，请勿重复运行。")
             return
-        cnt = 0
-        for ignore in self.removed.values():
+        notRemoved=[]
+        for name,ignore in self.removed.items():
             if not ignore:
-                cnt += 1
+                notRemoved.append(name)
+        cnt = len(notRemoved)
         print(
             f"Image list health condition: {cnt}/{len(self.removed)} ({cnt*100/len(self.removed)}%)"
         )
+        if cnt <= 10:
+            shuffle(notRemoved)
+            self.forceShow=notRemoved.copy()
+            self.reset()
         if cnt == 1:
             QMessageBox.information(self._form, "Info", "图片数量仅剩1张，自动重置。")
             self.reset()
-        elif cnt <= 10:
-            btn_yes = QMessageBox.StandardButton.Yes
-            btn_no = QMessageBox.StandardButton.No
-            if (
-                QMessageBox.warning(
-                    self._form, "Warning", "图片数量少于10张，是否重置图片列表？", btn_yes, btn_no
-                )
-                == btn_yes
-            ):
-                self.reset()
+        
         self.timer.start(WAIT_TIME)
 
     def play(self,filename:str):
         # for filename in self.imgs.keys():
         file = Path(SOUND/(md5(filename.encode()).hexdigest()+".mp3"))
-        print(file,filename)
+        # print(file,filename)
         if not file.is_file():
             self.tts.run(filename.split(".")[0],file)
-        Popen("ffplay.exe -loglevel error -hide_banner -nodisp -autoexit "+str(file.absolute()),stdout=None)
+        Popen("ffplay -loglevel error -hide_banner -nodisp -autoexit "+str(file.absolute()),stdout=None)
 
     def stop(self):
         if not self.timer.isActive():
@@ -218,6 +215,12 @@ class AutoChoose(QObject):
         if self._cur is None:
             QMessageBox.about(self._form, "Question", "还没换图就点End了？")
             return
+        if len(self.forceShow):
+            if len(self.forceShow)==1:self.reset()
+            self._cur=self.forceShow.pop()
+            self.ui.img.setPixmap(self.imgs[self._cur])
+            print("Enforeced",self._cur)
+            print(self.forceShow)
         self.removed[self._cur] = True
         self.play(self._cur)
         self._cur = None
@@ -426,7 +429,7 @@ class FloatingWindow(QWidget):
         self.win.show()
 
         self._main.start()
-        self.timer.start(300)
+        self.timer.start(randint(200,360))
 
     def _close(self, e:QCloseEvent):
         self._winCloseEvent(e)
@@ -454,11 +457,6 @@ class FloatingWindow(QWidget):
         if delta.manhattanLength() < 10:
             self.onclik()
         self.drag_position = None
-
-
-# class FloatWindowOnce(FloatingWindow):
-#     def __init__(self, win: QWidget, main: AutoChoose):
-#         super().__init__(win)
         
 
 if __name__ == "__main__":
